@@ -198,7 +198,8 @@ function uid(){ return 'ex_' + Date.now().toString(36) + Math.random().toString(
 function mkEx(list, seedLogs, name, group, sets){
   const ex = { id: uid(), name, group };
   list.push(ex);
-  seedLogs[ex.id] = [{ date: SEED_DATE, sets: sets.map(([w,r]) => ({weight:w, reps:r})) }];
+  const baseAt = new Date(SEED_DATE + "T12:00:00").getTime();
+  seedLogs[ex.id] = [{ date: SEED_DATE, sets: sets.map(([w,r], i) => ({weight:w, reps:r, at: baseAt + i})) }];
   return ex;
 }
 
@@ -250,6 +251,7 @@ let currentDay = null;
 let currentExId = null;
 let editingExId = null;   // "__new__" | exId | null
 let extraRows = {};       // exId -> zusätzliche, manuell hinzugefügte Satz-Zeilen (nur für die aktuelle Session, nicht persistiert)
+let workoutStartedAt = null; // Zeitpunkt des letzten "Start" — trennt die aktuelle Einheit von alten Häkchen
 
 let trainingState = { running:false, startedAt:null, frozen:0 };
 let restState = { running:false, startedAt:null, frozen:0 };
@@ -381,13 +383,32 @@ function findExerciseDay(id){
 function getSessions(exId){
   return (data.logs[exId] || []).slice().sort((a,b)=> a.date.localeCompare(b.date));
 }
-function getLastSession(exId, excludeToday){
-  const sessions = getSessions(exId);
-  const filtered = excludeToday ? sessions.filter(s=>s.date !== todayStr()) : sessions;
-  return filtered.length ? filtered[filtered.length-1] : null;
+
+// Alle jemals geloggten Sätze einer Übung, chronologisch flach sortiert (unabhängig vom Kalendertag).
+function allSetsFlat(exId){
+  const out = [];
+  (data.logs[exId] || []).forEach(entry=>{
+    entry.sets.forEach(s=>{
+      out.push({ date: entry.date, weight: s.weight, reps: s.reps, at: s.at || 0 });
+    });
+  });
+  out.sort((a,b)=> a.at - b.at);
+  return out;
 }
-function getTodaySession(exId){
-  return (data.logs[exId] || []).find(s => s.date === todayStr()) || null;
+// Sätze, die seit Beginn der AKTUELLEN Trainingseinheit (seit "Start") abgehakt wurden.
+function getSessionCheckedSets(exId){
+  if(workoutStartedAt === null) return [];
+  return allSetsFlat(exId).filter(s => s.at >= workoutStartedAt);
+}
+// Die letzte abgeschlossene Einheit VOR dem aktuellen Start — als "Letztes Mal"-Referenz,
+// egal ob das gestern war oder heute schon einmal (z.B. bei einem erneuten Start am selben Tag).
+function getPriorReferenceSession(exId){
+  const cutoff = workoutStartedAt === null ? Infinity : workoutStartedAt;
+  const prior = allSetsFlat(exId).filter(s => s.at < cutoff);
+  if(prior.length === 0) return null;
+  const lastDate = prior[prior.length-1].date;
+  const sets = prior.filter(s => s.date === lastDate).map(s => ({weight:s.weight, reps:s.reps}));
+  return { date: lastDate, sets };
 }
 
 /* ---------- RENDER ---------- */
@@ -483,20 +504,20 @@ function renderDay(){
 }
 
 function renderExerciseCard(ex){
-  const lastSession = getLastSession(ex.id, true);
-  const todaySession = getTodaySession(ex.id);
-  const checkedCount = todaySession ? todaySession.sets.length : 0;
+  const priorSession = getPriorReferenceSession(ex.id);
+  const sessionSets = getSessionCheckedSets(ex.id);
+  const checkedCount = sessionSets.length;
   const rowCount = Math.max(3 + (extraRows[ex.id]||0), checkedCount);
 
   const rows = [];
   for(let i=0;i<rowCount;i++){
     const isChecked = i < checkedCount;
-    const prevSet = (lastSession && lastSession.sets[i]) ? lastSession.sets[i] : null;
+    const prevSet = (priorSession && priorSession.sets[i]) ? priorSession.sets[i] : null;
     const prevTxt = prevSet ? `${fmtW(prevSet.weight)}kg×${prevSet.reps}` : "–";
 
     let midHtml, checkHtml;
     if(isChecked){
-      const s = todaySession.sets[i];
+      const s = sessionSets[i];
       midHtml = `<div class="set-static">${fmtW(s.weight)}</div><div class="set-static">${s.reps}</div>`;
       const isLastChecked = i === checkedCount - 1;
       checkHtml = isLastChecked
@@ -711,6 +732,7 @@ function attachEvents(){
     view = "day";
     editingExId = null;
     extraRows = {};
+    workoutStartedAt = Date.now();
     startTimer(trainingState);
     restState = { running:false, startedAt:null, frozen:0 };
     render();
@@ -719,11 +741,13 @@ function attachEvents(){
   const exitBtn = app.querySelector("#exit-workout");
   if(exitBtn) exitBtn.addEventListener("click", ()=>{
     stopTimer(trainingState); stopTimer(restState);
+    workoutStartedAt = null;
     view = "home"; editingExId = null; render();
   });
   const finishBtn = app.querySelector("#finish-workout");
   if(finishBtn) finishBtn.addEventListener("click", ()=>{
     stopTimer(trainingState); stopTimer(restState);
+    workoutStartedAt = null;
     view = "home"; editingExId = null; render();
   });
 
@@ -789,7 +813,7 @@ function attachEvents(){
       const today = todayStr();
       let entry = data.logs[exid].find(s => s.date === today);
       if(!entry){ entry = {date: today, sets: []}; data.logs[exid].push(entry); }
-      entry.sets.push({weight:w, reps:r});
+      entry.sets.push({weight:w, reps:r, at: Date.now()});
       await saveData();
       startTimer(restState);
       render();
@@ -799,12 +823,15 @@ function attachEvents(){
   app.querySelectorAll('[data-action="uncheck-set"]').forEach(b=>{
     b.addEventListener("click", async ()=>{
       const exid = b.dataset.ex;
-      const today = todayStr();
-      const entry = (data.logs[exid]||[]).find(s => s.date === today);
+      const sessionSets = getSessionCheckedSets(exid);
+      if(sessionSets.length === 0) return;
+      const last = sessionSets[sessionSets.length - 1];
+      const entry = (data.logs[exid]||[]).find(s => s.date === last.date);
       if(entry){
-        entry.sets.pop();
+        const idx = entry.sets.findIndex(s => s.at === last.at);
+        if(idx >= 0) entry.sets.splice(idx, 1);
         if(entry.sets.length === 0){
-          data.logs[exid] = data.logs[exid].filter(s => s.date !== today);
+          data.logs[exid] = data.logs[exid].filter(s => s.date !== last.date);
         }
         await saveData();
         render();
