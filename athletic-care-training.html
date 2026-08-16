@@ -182,6 +182,79 @@
   }
   .timer-btn.running{background:var(--danger); color:#2a0a0a;}
   .timer-spacer{height:88px;}
+
+  .workoutz-btn{
+    display:block; width:calc(100% - 36px); margin:4px 18px 24px;
+    background:var(--panel); border:1px solid var(--border); color:var(--text);
+    padding:15px; border-radius:6px; font-size:14px; font-weight:700;
+    letter-spacing:0.3px;
+  }
+  .workoutz-btn:active{background:var(--panel2);}
+
+  /* ---- Workoutz Tabellen-Ansicht ---- */
+  .sheet-scroll{
+    overflow:auto; -webkit-overflow-scrolling:touch;
+    max-height:calc(100vh - 200px);
+    margin:14px 12px 100px;
+    border:1px solid var(--border); border-radius:6px;
+  }
+  table.sheet-table{border-collapse:separate; border-spacing:0; font-size:11.5px; white-space:nowrap;}
+  table.sheet-table th, table.sheet-table td{
+    border-right:1px solid var(--border); border-bottom:1px solid var(--border);
+    padding:6px 7px; background:var(--bg);
+  }
+  table.sheet-table thead th{
+    position:sticky; top:0; z-index:2; background:#141410; color:var(--text-dim);
+    font-size:9.5px; text-transform:uppercase; letter-spacing:0.4px; font-weight:700;
+  }
+  table.sheet-table .lbl-col{
+    position:sticky; left:0; z-index:1; background:var(--panel);
+  }
+  table.sheet-table .lbl-col2{
+    position:sticky; left:96px; z-index:1; background:var(--panel);
+  }
+  table.sheet-table .lbl-col3{
+    position:sticky; left:172px; z-index:1; background:var(--panel);
+  }
+  table.sheet-table thead th.lbl-col, table.sheet-table thead th.lbl-col2, table.sheet-table thead th.lbl-col3{
+    z-index:3; background:#141410;
+  }
+  .sheet-name-input{
+    width:88px; background:none; border:none; color:var(--text); font-weight:700; font-size:11.5px;
+    padding:2px; white-space:normal;
+  }
+  .sheet-name-input:focus{outline:1px solid var(--yellow); border-radius:2px;}
+  .sheet-group-input{
+    width:70px; background:none; border:none; color:var(--yellow-dim); font-size:10.5px; font-weight:700;
+    text-transform:uppercase; padding:2px;
+  }
+  .sheet-group-input:focus{outline:1px solid var(--yellow); border-radius:2px;}
+  .sheet-rowtype{color:var(--text-dim); font-size:10px; text-transform:uppercase; font-weight:700;}
+  .sheet-del-btn{
+    background:var(--panel2); border:1px solid var(--danger-dim); color:var(--danger);
+    border-radius:3px; width:22px; height:22px; font-size:11px; flex-shrink:0;
+    display:inline-flex; align-items:center; justify-content:center; margin-left:4px;
+  }
+  .sheet-cell-input{
+    width:38px; background:none; border:none; color:var(--text); font-size:11.5px;
+    text-align:center; padding:2px; font-weight:600;
+  }
+  .sheet-cell-input:focus{outline:1px solid var(--yellow); border-radius:2px; background:var(--panel2);}
+  .sheet-cell-empty{color:var(--border); text-align:center; display:inline-block; width:38px;}
+  .sheet-datehead{text-align:center;}
+  .sheet-empty{padding:40px 18px; text-align:center; color:var(--text-dim); font-size:13px; line-height:1.6; white-space:normal;}
+
+  .sheet-tabs{
+    position:fixed; bottom:0; left:50%; transform:translateX(-50%);
+    width:100%; max-width:480px; display:flex;
+    background:#101010; border-top:1px solid var(--border); z-index:50;
+    padding-bottom:env(safe-area-inset-bottom);
+  }
+  .sheet-tab{
+    flex:1; text-align:center; padding:13px 4px; background:none; border:none;
+    color:var(--text-dim); font-size:12px; font-weight:700; border-top:2px solid transparent;
+  }
+  .sheet-tab.active{color:var(--yellow); border-top-color:var(--yellow); background:var(--panel);}
 </style>
 </head>
 <body>
@@ -223,17 +296,21 @@ function buildDefaultData(){
   mkEx(plans.pushB, logs, "Seitenheben mit KH", "Schultern", [[10,18],[10,15],[10,13]]);
   mkEx(plans.pushB, logs, "Dips / Trizeps über Kopf", "Trizeps", [[25,12],[25,10],[25,8]]);
 
-  // Pull B — aus Pull_B_Trainingsplan.xlsx (Pull A wird 1:1 gespiegelt, da keine eigene Datei vorlag)
-  const pullExercises = [
-    ["Rudern schwer (LH / T-Bar)", "Rücken", [[70,9],[70,8],[70,6]]],
-    ["Latzug eng / neutral", "Rücken", [[55,12],[55,11],[55,10]]],
-    ["Hip Thrust", "Beine", [[80,12],[80,10],[80,9]]],
-    ["Beinbeuger", "Beine", [[40,15],[40,13],[40,12]]],
-    ["Reverse Fly / Face Pull", "Schultern", [[20,18],[20,16],[20,15]]],
-    ["Hammer-Curl mit KH", "Bizeps", [[14,13],[14,12],[14,10]]],
-  ];
-  pullExercises.forEach(([name, group, sets]) => mkEx(plans.pullB, logs, name, group, sets));
-  pullExercises.forEach(([name, group, sets]) => mkEx(plans.pullA, logs, name, group, sets));
+  // Pull A — aus Pull_A_Trainingsplan.xlsx
+  mkEx(plans.pullA, logs, "Klimmzug / Latzug", "Rücken", [[55,12],[55,10],[55,9]]);
+  mkEx(plans.pullA, logs, "Rudern am Kabelzug", "Rücken", [[50,12],[50,10],[50,10]]);
+  mkEx(plans.pullA, logs, "Rumänisches Kreuzheben", "Beine", [[70,10],[70,9],[70,8]]);
+  mkEx(plans.pullA, logs, "Face Pulls / Reverse Fly", "Schultern", [[20,18],[20,16],[20,15]]);
+  mkEx(plans.pullA, logs, "Bizeps-Curl mit KH", "Bizeps", [[14,12],[14,11],[14,10]]);
+  mkEx(plans.pullA, logs, "Beinbeuger", "Beine", [[40,13],[40,12],[40,11]]);
+
+  // Pull B — aus Pull_B_Trainingsplan.xlsx
+  mkEx(plans.pullB, logs, "Rudern schwer (LH / T-Bar)", "Rücken", [[70,9],[70,8],[70,6]]);
+  mkEx(plans.pullB, logs, "Latzug eng / neutral", "Rücken", [[55,12],[55,11],[55,10]]);
+  mkEx(plans.pullB, logs, "Hip Thrust", "Beine", [[80,12],[80,10],[80,9]]);
+  mkEx(plans.pullB, logs, "Beinbeuger", "Beine", [[40,15],[40,13],[40,12]]);
+  mkEx(plans.pullB, logs, "Reverse Fly / Face Pull", "Schultern", [[20,18],[20,16],[20,15]]);
+  mkEx(plans.pullB, logs, "Hammer-Curl mit KH", "Bizeps", [[14,13],[14,12],[14,10]]);
 
   return { plans, logs };
 }
@@ -246,9 +323,10 @@ const DAY_META = {
 };
 
 let data = null;
-let view = "home";        // home | day | exercise
+let view = "home";        // home | day | exercise | sheets
 let currentDay = null;
 let currentExId = null;
+let currentSheetDay = "pushA";
 let editingExId = null;   // "__new__" | exId | null
 let extraRows = {};       // exId -> zusätzliche, manuell hinzugefügte Satz-Zeilen (nur für die aktuelle Session, nicht persistiert)
 let workoutStartedAt = null; // Zeitpunkt des letzten "Start" — trennt die aktuelle Einheit von alten Häkchen
@@ -419,6 +497,7 @@ function render(){
   if(view === "home") app.appendChild(renderHome());
   else if(view === "day") app.appendChild(renderDay());
   else if(view === "exercise") app.appendChild(renderExercise());
+  else if(view === "sheets") app.appendChild(renderSheets());
   attachEvents();
 }
 
@@ -442,12 +521,13 @@ function renderHome(){
       <h1 class="display">Was steht an?</h1>
     </div>
     <div class="routine-list" id="routine-list"></div>
+    <button class="workoutz-btn" id="open-sheets">📊 Workoutz</button>
   </div>`);
 
   const listEl = wrap.querySelector("#routine-list");
   Object.keys(DAY_META).forEach(key=>{
     const meta = DAY_META[key];
-    const list = data.plans[key];
+    const list = data.plans[key].filter(ex => !ex.removed);
     const card = el(`<div class="routine-card" data-day="${key}">
       <div class="routine-glyph">${meta.glyph}</div>
       <div class="routine-info">
@@ -463,7 +543,7 @@ function renderHome(){
 
 function renderDay(){
   const meta = DAY_META[currentDay];
-  const list = data.plans[currentDay];
+  const list = data.plans[currentDay].filter(ex => !ex.removed);
   const wrap = el(`<div>
     <div class="workout-header">
       <button class="icon-x" id="exit-workout" title="Zurück">✕</button>
@@ -576,6 +656,117 @@ function renderEditForm(ex){
       <button class="form-btn primary" data-action="save-form" data-exid="${isNew ? '__new__' : ex.id}">Speichern</button>
     </div>
   </div>`);
+}
+
+const ROMAN = ["I","II","III","IV","V","VI","VII","VIII","IX","X"];
+function romanOrNum(i){ return ROMAN[i] || String(i+1); }
+
+// Sammelt für einen Tag ALLE jemals genutzten Übungen (auch entfernte) und alle Datums-Spalten.
+function buildSheetData(day){
+  const exercises = data.plans[day];
+  const dateSet = new Set();
+  exercises.forEach(ex => (data.logs[ex.id] || []).forEach(entry => dateSet.add(entry.date)));
+  const dates = [...dateSet].sort();
+  const maxSetsByDate = {};
+  dates.forEach(d=>{
+    let max = 1;
+    exercises.forEach(ex=>{
+      const entry = (data.logs[ex.id] || []).find(e => e.date === d);
+      if(entry && entry.sets.length > max) max = entry.sets.length;
+    });
+    maxSetsByDate[d] = max;
+  });
+  return { exercises, dates, maxSetsByDate };
+}
+
+function buildRowCells(ex, dates, maxSetsByDate, field){
+  if(dates.length === 0) return `<td>–</td>`;
+  let html = "";
+  dates.forEach(d=>{
+    const n = maxSetsByDate[d];
+    const entry = (data.logs[ex.id] || []).find(e => e.date === d);
+    for(let i=0;i<n;i++){
+      const s = entry && entry.sets[i];
+      if(s){
+        const val = field === "weight" ? fmtW(s.weight) : s.reps;
+        html += `<td><input type="number" inputmode="decimal" class="sheet-cell-input" data-exid="${ex.id}" data-date="${d}" data-slot="${i}" data-field="${field}" value="${val}"></td>`;
+      } else {
+        html += `<td><span class="sheet-cell-empty">–</span></td>`;
+      }
+    }
+  });
+  return html;
+}
+
+function buildSheetTableHtml(exercises, dates, maxSetsByDate){
+  let headDates = `<th class="lbl-col">Übung</th><th class="lbl-col2">Gruppe</th><th class="lbl-col3"></th>`;
+  let headSets = `<th class="lbl-col"></th><th class="lbl-col2"></th><th class="lbl-col3"></th>`;
+  if(dates.length === 0){
+    headDates += `<th>—</th>`;
+    headSets += `<th>—</th>`;
+  } else {
+    dates.forEach(d=>{
+      const n = maxSetsByDate[d];
+      headDates += `<th class="sheet-datehead" colspan="${n}">${fmtDate(d)}</th>`;
+      for(let i=0;i<n;i++) headSets += `<th class="sheet-datehead">${romanOrNum(i)}</th>`;
+    });
+  }
+
+  let bodyHtml = "";
+  exercises.forEach(ex=>{
+    const removedTag = ex.removed ? ` <span style="color:var(--text-dim); font-size:9px; font-weight:400;">(entfernt)</span>` : "";
+    bodyHtml += `<tr>
+      <td class="lbl-col" rowspan="2">
+        <input class="sheet-name-input" data-exname="${ex.id}" value="${esc(ex.name)}">${removedTag}
+      </td>
+      <td class="lbl-col2" rowspan="2">
+        <input class="sheet-group-input" data-exgroup="${ex.id}" value="${esc(ex.group||'')}" placeholder="–">
+      </td>
+      <td class="lbl-col3"><span class="sheet-rowtype">Kg</span></td>
+      ${buildRowCells(ex, dates, maxSetsByDate, "weight")}
+    </tr>
+    <tr>
+      <td class="lbl-col3">
+        <span class="sheet-rowtype">Wdh</span>
+        <button class="sheet-del-btn" data-action="sheet-delete-ex" data-exid="${ex.id}" title="Übung endgültig löschen">🗑</button>
+      </td>
+      ${buildRowCells(ex, dates, maxSetsByDate, "reps")}
+    </tr>`;
+  });
+
+  return `<div class="sheet-scroll"><table class="sheet-table">
+    <thead><tr>${headDates}</tr><tr>${headSets}</tr></thead>
+    <tbody>${bodyHtml}</tbody>
+  </table></div>`;
+}
+
+function renderSheets(){
+  const wrap = el(`<div>
+    <div class="back-row">
+      <button class="back-btn" id="back-home-sheets">← Zurück</button>
+    </div>
+    <div class="day-title">
+      <div class="eyebrow">Workoutz</div>
+      <h2>${DAY_META[currentSheetDay].label}</h2>
+    </div>
+    <div id="sheet-container"></div>
+    <div class="sheet-tabs" id="sheet-tabs"></div>
+  </div>`);
+
+  const { exercises, dates, maxSetsByDate } = buildSheetData(currentSheetDay);
+  const container = wrap.querySelector("#sheet-container");
+  if(exercises.length === 0){
+    container.appendChild(el(`<div class="sheet-empty">Noch keine Übungen für ${DAY_META[currentSheetDay].label}. Füg im Workout eine Übung hinzu, dann erscheint hier automatisch eine Zeile.</div>`));
+  } else {
+    container.appendChild(el(buildSheetTableHtml(exercises, dates, maxSetsByDate)));
+  }
+
+  const tabsEl = wrap.querySelector("#sheet-tabs");
+  Object.keys(DAY_META).forEach(key=>{
+    tabsEl.appendChild(el(`<button class="sheet-tab ${key===currentSheetDay?'active':''}" data-sheetday="${key}">${DAY_META[key].label}</button>`));
+  });
+
+  return wrap;
 }
 
 function renderExercise(){
@@ -738,6 +929,16 @@ function attachEvents(){
     render();
   }));
 
+  const openSheets = app.querySelector("#open-sheets");
+  if(openSheets) openSheets.addEventListener("click", ()=>{ view = "sheets"; render(); });
+
+  const backHomeSheets = app.querySelector("#back-home-sheets");
+  if(backHomeSheets) backHomeSheets.addEventListener("click", ()=>{ view = "home"; render(); });
+
+  app.querySelectorAll(".sheet-tab").forEach(t=>{
+    t.addEventListener("click", ()=>{ currentSheetDay = t.dataset.sheetday; render(); });
+  });
+
   const exitBtn = app.querySelector("#exit-workout");
   if(exitBtn) exitBtn.addEventListener("click", ()=>{
     stopTimer(trainingState); stopTimer(restState);
@@ -782,10 +983,10 @@ function attachEvents(){
 
   app.querySelectorAll('[data-action="delete"]').forEach(b=>{
     b.addEventListener("click", async ()=>{
-      if(!confirm("Diese Übung wirklich löschen? Der bisherige Verlauf bleibt gespeichert, wird aber nirgends mehr angezeigt.")) return;
-      const day = findExerciseDay(b.dataset.exid);
-      if(day){
-        data.plans[day] = data.plans[day].filter(e => e.id !== b.dataset.exid);
+      if(!confirm("Diese Übung aus dem Trainingsplan nehmen? Sie taucht danach nicht mehr im Workout auf, bleibt aber in \"Workoutz\" weiterhin sichtbar.")) return;
+      const ex = findExercise(b.dataset.exid);
+      if(ex){
+        ex.removed = true;
         await saveData();
         render();
       }
@@ -850,6 +1051,54 @@ function attachEvents(){
   if(restBtn) restBtn.addEventListener("click", ()=>{
     restState.running ? stopTimer(restState) : startTimer(restState);
     updateRestUI();
+  });
+
+  app.querySelectorAll('.sheet-name-input').forEach(inp=>{
+    inp.addEventListener("blur", async ()=>{
+      const val = inp.value.trim();
+      if(!val) { inp.value = findExercise(inp.dataset.exname)?.name || ""; return; }
+      const ex = findExercise(inp.dataset.exname);
+      if(ex && ex.name !== val){ ex.name = val; await saveData(); render(); }
+    });
+  });
+  app.querySelectorAll('.sheet-group-input').forEach(inp=>{
+    inp.addEventListener("blur", async ()=>{
+      const ex = findExercise(inp.dataset.exgroup);
+      const val = inp.value.trim();
+      if(ex && ex.group !== val){ ex.group = val; await saveData(); render(); }
+    });
+  });
+  app.querySelectorAll('.sheet-cell-input').forEach(inp=>{
+    inp.addEventListener("blur", async ()=>{
+      const { exid, date, slot, field } = inp.dataset;
+      const entry = (data.logs[exid]||[]).find(e => e.date === date);
+      if(!entry || !entry.sets[Number(slot)]) return;
+      const raw = inp.value.trim();
+      const num = parseFloat(raw);
+      if(raw === "" || isNaN(num)){
+        entry.sets.splice(Number(slot), 1);
+        if(entry.sets.length === 0){
+          data.logs[exid] = data.logs[exid].filter(e => e.date !== date);
+        }
+      } else {
+        entry.sets[Number(slot)][field] = num;
+      }
+      await saveData();
+      render();
+    });
+  });
+  app.querySelectorAll('[data-action="sheet-delete-ex"]').forEach(b=>{
+    b.addEventListener("click", async ()=>{
+      if(!confirm("Diese Übung inkl. ihres GESAMTEN Verlaufs endgültig löschen? Das kann nicht rückgängig gemacht werden.")) return;
+      const exid = b.dataset.exid;
+      const day = findExerciseDay(exid);
+      if(day){
+        data.plans[day] = data.plans[day].filter(e => e.id !== exid);
+        delete data.logs[exid];
+        await saveData();
+        render();
+      }
+    });
   });
 }
 
