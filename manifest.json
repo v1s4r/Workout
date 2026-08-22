@@ -1,0 +1,18 @@
+{
+  "name": "Track Your Health — Training Log",
+  "short_name": "Track Your Health",
+  "description": "Dein persönliches Trainingslogbuch — Pläne, Sätze, Fortschritt und Verlauf, synchronisiert über Geräte hinweg.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#070f1a",
+  "theme_color": "#070f1a",
+  "lang": "de",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-192-maskable.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icons/icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
