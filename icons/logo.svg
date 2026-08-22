@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <defs>
+    <radialGradient id="bgGrad" cx="50%" cy="42%" r="65%">
+      <stop offset="0%" stop-color="#173355"/>
+      <stop offset="100%" stop-color="#07111c"/>
+    </radialGradient>
+    <linearGradient id="ringBlue" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#8fddff"/>
+      <stop offset="100%" stop-color="#2f8fff"/>
+    </linearGradient>
+    <linearGradient id="ringOrange" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffc27a"/>
+      <stop offset="100%" stop-color="#ff7a1a"/>
+    </linearGradient>
+    <linearGradient id="boltGrad" x1="30%" y1="0%" x2="75%" y2="100%">
+      <stop offset="0%" stop-color="#8fddff"/>
+      <stop offset="46%" stop-color="#ffe08a"/>
+      <stop offset="100%" stop-color="#ff7a1a"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#57657a"/>
+      <stop offset="50%" stop-color="#242c38"/>
+      <stop offset="100%" stop-color="#0e131a"/>
+    </linearGradient>
+    <linearGradient id="metalHi" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7a8798"/>
+      <stop offset="100%" stop-color="#333e4e"/>
+    </linearGradient>
+    <filter id="glowBlue" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowOrange" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3.4" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowBolt" x="-80%" y="-80%" width="260%" height="260%">
+      <feGaussianBlur stdDeviation="3" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- background disc -->
+  <circle cx="100" cy="100" r="80" fill="url(#bgGrad)"/>
+
+  <!-- outer badge points, colored to match nearest ring half, sitting just outside the disc -->
+  <g>
+    <path d="M100 4 L107 24 L100 30 L93 24 Z" fill="url(#ringBlue)"/>
+    <path d="M100 196 L107 176 L100 170 L93 176 Z" fill="url(#ringOrange)"/>
+    <path d="M4 100 L24 93 L30 100 L24 107 Z" fill="url(#ringBlue)"/>
+    <path d="M196 100 L176 107 L170 100 L176 93 Z" fill="url(#ringOrange)"/>
+    <path d="M32 32 L48 38 L44 44 L38 48 Z" fill="url(#ringBlue)"/>
+    <path d="M168 168 L152 162 L156 156 L162 152 Z" fill="url(#ringOrange)"/>
+    <path d="M168 32 L162 48 L156 44 L152 38 Z" fill="url(#ringBlue)"/>
+    <path d="M32 168 L38 152 L44 156 L48 162 Z" fill="url(#ringOrange)"/>
+  </g>
+
+  <!-- outer ring split blue/orange -->
+  <circle cx="100" cy="100" r="80" fill="none" stroke="url(#ringBlue)" stroke-width="5"
+          stroke-dasharray="125.7 125.7" stroke-dashoffset="31.4" opacity="0.95"/>
+  <circle cx="100" cy="100" r="80" fill="none" stroke="url(#ringOrange)" stroke-width="5"
+          stroke-dasharray="125.7 125.7" stroke-dashoffset="157" opacity="0.95"/>
+
+  <!-- inner thin ring -->
+  <circle cx="100" cy="100" r="70" fill="none" stroke="#2b4568" stroke-width="1.5" opacity="0.55"/>
+
+  <!-- crossed dumbbells -->
+  <g transform="rotate(-42 100 100)" filter="url(#glowBlue)">
+    <rect x="44" y="94" width="112" height="12" rx="4" fill="url(#metalHi)"/>
+    <rect x="38" y="79" width="17" height="42" rx="4" fill="url(#metal)"/>
+    <rect x="33" y="86" width="10" height="28" rx="3" fill="url(#metal)"/>
+    <rect x="145" y="79" width="17" height="42" rx="4" fill="url(#metal)"/>
+    <rect x="157" y="86" width="10" height="28" rx="3" fill="url(#metal)"/>
+    <ellipse cx="46.5" cy="100" rx="3" ry="18" fill="#8fddff" opacity="0.9"/>
+    <rect x="50" y="96" width="98" height="3" rx="1.5" fill="#8fddff" opacity="0.35"/>
+  </g>
+
+  <g transform="rotate(42 100 100)" filter="url(#glowOrange)">
+    <rect x="44" y="94" width="112" height="12" rx="4" fill="url(#metalHi)"/>
+    <rect x="38" y="79" width="17" height="42" rx="4" fill="url(#metal)"/>
+    <rect x="33" y="86" width="10" height="28" rx="3" fill="url(#metal)"/>
+    <rect x="145" y="79" width="17" height="42" rx="4" fill="url(#metal)"/>
+    <rect x="157" y="86" width="10" height="28" rx="3" fill="url(#metal)"/>
+    <ellipse cx="153.5" cy="100" rx="3" ry="18" fill="#ffc27a" opacity="0.95"/>
+  </g>
+
+  <!-- electric spark accents (small jagged bolts, not letters) -->
+  <g stroke="#8fddff" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowBlue)" opacity="0.9">
+    <path d="M34 58 L41 66 L36 69 L44 79"/>
+    <path d="M24 96 L34 92 L31 100 L40 98"/>
+  </g>
+  <g stroke="#ffc27a" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round" filter="url(#glowOrange)" opacity="0.9">
+    <path d="M166 142 L159 134 L164 131 L156 121"/>
+    <path d="M176 104 L166 108 L169 100 L160 102"/>
+  </g>
+
+  <!-- lightning bolt -->
+  <path d="M112 24 L76 110 L97 110 L86 178 L140 86 L115 86 Z"
+        fill="url(#boltGrad)" stroke="#07111c" stroke-width="3.2" stroke-linejoin="round" filter="url(#glowBolt)"/>
+</svg>
