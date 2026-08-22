@@ -47,6 +47,16 @@ let lastSyncedAt = null;
 let pushTimer = null;
 let currentStorageKey = null; // STORAGE_PREFIX + user id, set once logged in
 let dataLoading = false;      // true only while onLogin() fetches the initial cloud state
+let pendingLoginToast = false; // true between "Anmelden/Konto erstellen" submit and onLogin() finishing
+let toastMessage = null;
+let toastTimer = null;
+
+function showToast(text, ms){
+  toastMessage = text;
+  render();
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(()=>{ toastMessage = null; render(); }, ms || 1800);
+}
 
 /* ---------- Admin / Mitglieder-Verwaltung ---------- */
 
@@ -139,21 +149,22 @@ async function pullFromCloudAndMerge(){
 
 async function signUp(email, password){
   authMsg = null;
-  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; render(); return; }
+  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; pendingLoginToast = false; render(); return; }
   const { data: res, error } = await sb.auth.signUp({ email, password });
-  if(error){ authMsg = { type:"error", text: error.message }; render(); return; }
+  if(error){ authMsg = { type:"error", text: error.message }; pendingLoginToast = false; render(); return; }
   if(!res.session){
     // E-Mail-Bestätigung ist aktiv: onAuthStateChange feuert erst nach der Bestätigung + Anmeldung.
     authMsg = { type:"ok", text:"Konto erstellt. Bitte bestätige deine E-Mail-Adresse und melde dich danach an." };
+    pendingLoginToast = false;
     render();
   }
   // Bei sofortiger Session übernimmt onAuthStateChange (-> onLogin) den Rest.
 }
 async function signIn(email, password){
   authMsg = null;
-  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; render(); return; }
+  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; pendingLoginToast = false; render(); return; }
   const { error } = await sb.auth.signInWithPassword({ email, password });
-  if(error){ authMsg = { type:"error", text: error.message }; render(); return; }
+  if(error){ authMsg = { type:"error", text: error.message }; pendingLoginToast = false; render(); return; }
   // onAuthStateChange (-> onLogin) übernimmt das Laden der Trainingsdaten.
 }
 async function signOut(){
@@ -414,7 +425,12 @@ async function onLogin(){
   lastSyncedAt = Date.now();
   dataLoading = false;
   resetNavigationHistory();
-  render();
+  if(pendingLoginToast){
+    pendingLoginToast = false;
+    showToast("Erfolgreich angemeldet!");
+  } else {
+    render();
+  }
 }
 
 function onLogout(){
@@ -585,6 +601,7 @@ function render(){
   else if(view === "sheets") app.appendChild(renderSheets());
   else if(view === "account") app.appendChild(renderAccount());
   else if(view === "admin") app.appendChild(adminUnlocked ? renderAdminPanel() : renderAdminPinGate());
+  if(toastMessage) app.appendChild(el(`<div class="toast-banner">${icon('check')} ${esc(toastMessage)}</div>`));
   attachEvents();
 }
 
@@ -1511,6 +1528,7 @@ function attachEvents(){
     const email = app.querySelector("#auth-email").value.trim();
     const password = app.querySelector("#auth-password").value;
     if(!email || !password){ authMsg = { type:"error", text:"Bitte E-Mail und Passwort eingeben." }; render(); return; }
+    pendingLoginToast = true;
     if(authMode === "signin") await signIn(email, password);
     else await signUp(email, password);
   });
