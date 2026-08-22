@@ -15,12 +15,17 @@ const LOCAL_UPDATED_KEY = "tyh-local-updated-at";
 const SUPABASE_URL = "https://iobplzfqlnzlxsgenxzm.supabase.co";
 const SUPABASE_ANON_KEY = "sb_publishable_S9F3fCBJcX8V4NCqgKgDPw_TG037xYk";
 
+// Sperrt den Admin-Tab nur vor versehentlichem Antippen — KEINE echte Zugriffskontrolle.
+// Die eigentliche Berechtigung kommt aus dem "is_admin"-Flag in der Datenbank (siehe README),
+// serverseitig über Row Level Security durchgesetzt.
+const ADMIN_PIN = "0816";
+
 function uid(){ return 'ex_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
 /* ---------- App-State ---------- */
 
 let data = null;
-let view = "home";        // home | day | exercise | sheets | account
+let view = "home";        // home | day | exercise | sheets | account | admin
 let currentPlanId = null;
 let currentExId = null;
 let currentSheetPlanId = null;
@@ -43,6 +48,22 @@ let pushTimer = null;
 let currentStorageKey = null; // STORAGE_PREFIX + user id, set once logged in
 let dataLoading = false;      // true only while onLogin() fetches the initial cloud state
 
+/* ---------- Admin / Mitglieder-Verwaltung ---------- */
+
+let profile = null;           // eigenes Profil {id, display_name, is_admin}
+let isAdmin = false;
+let adminUnlocked = false;    // PIN diese Sitzung schon eingegeben
+let adminPinMsg = null;
+let adminSearchQuery = "";
+let adminMembers = [];
+let adminSearchTimer = null;
+let impersonating = null;     // {userId, displayName} während Admin fremde Daten bearbeitet
+let adminOwn = null;          // Zwischenspeicher der eigenen Daten während Impersonation
+
+/* ---------- Navigation / Verlauf (Android-Zurück-Geste etc.) ---------- */
+
+let hasPushedView = false;
+
 function initSupabase(){
   if(typeof window.supabase === "undefined"){ sb = null; return; }
   try{
@@ -58,10 +79,11 @@ function scheduleCloudPush(){
 
 async function pushToCloud(){
   if(!sb || !sbSession) return;
+  const targetUserId = impersonating ? impersonating.userId : sbSession.user.id;
   syncBusy = true; renderSyncIndicatorOnly();
   try{
     const { error } = await sb.from("training_data").upsert({
-      user_id: sbSession.user.id,
+      user_id: targetUserId,
       data: data,
       updated_at: new Date().toISOString()
     }, { onConflict: "user_id" });
@@ -137,6 +159,92 @@ async function signIn(email, password){
 async function signOut(){
   if(sb) await sb.auth.signOut();
   // onAuthStateChange (-> onLogout) räumt den lokalen State auf.
+}
+
+/* ---------- Profil & Admin ---------- */
+
+async function ensureOwnProfile(){
+  if(!sb || !sbSession) return;
+  try{
+    const { data: row } = await sb.from("profiles").select("id, display_name, is_admin").eq("id", sbSession.user.id).maybeSingle();
+    if(row){ profile = row; }
+    else {
+      const displayName = (sbSession.user.email || "Mitglied").split("@")[0];
+      const { data: inserted } = await sb.from("profiles").upsert(
+        { id: sbSession.user.id, display_name: displayName }, { onConflict: "id" }
+      ).select("id, display_name, is_admin").maybeSingle();
+      profile = inserted || { id: sbSession.user.id, display_name: displayName, is_admin: false };
+    }
+  } catch(e){
+    console.error("Profil konnte nicht geladen werden", e);
+    profile = { id: sbSession.user.id, display_name: (sbSession.user.email||"").split("@")[0], is_admin: false };
+  }
+  isAdmin = !!(profile && profile.is_admin);
+}
+
+async function saveOwnDisplayName(name){
+  if(!sb || !sbSession || !name.trim()) return;
+  const { data: updated } = await sb.from("profiles").update({ display_name: name.trim() }).eq("id", sbSession.user.id).select("id, display_name, is_admin").maybeSingle();
+  if(updated) profile = updated;
+}
+
+function adminUnlockWithPin(pin){
+  if(pin !== ADMIN_PIN){ adminPinMsg = "Falscher Code."; render(); return; }
+  adminUnlocked = true; adminPinMsg = null;
+  runAdminSearch("");
+}
+
+async function adminSearchMembers(query){
+  if(!sb || !isAdmin) return [];
+  try{
+    let q = sb.from("profiles").select("id, display_name").order("display_name", { ascending: true }).limit(30);
+    if(query && query.trim()) q = q.ilike("display_name", `%${query.trim()}%`);
+    const { data: rows, error } = await q;
+    return (!error && rows) ? rows : [];
+  } catch(e){ console.error("Mitgliedersuche fehlgeschlagen", e); return []; }
+}
+
+async function runAdminSearch(query){
+  adminSearchQuery = query;
+  adminMembers = await adminSearchMembers(query);
+  render();
+}
+
+function scheduleAdminSearch(query){
+  adminSearchQuery = query;
+  clearTimeout(adminSearchTimer);
+  adminSearchTimer = setTimeout(async ()=>{
+    adminMembers = await adminSearchMembers(query);
+    const listEl = document.getElementById("admin-member-list");
+    if(listEl){ listEl.innerHTML = renderAdminMemberListHtml(); wireAdminMemberList(); }
+  }, 300);
+}
+
+async function adminOpenMember(memberId, memberName){
+  dataLoading = true; render();
+  adminOwn = { data, currentStorageKey, currentSheetPlanId };
+  let memberData = emptyData();
+  try{
+    const { data: row } = await sb.from("training_data").select("data").eq("user_id", memberId).maybeSingle();
+    if(row && row.data) memberData = row.data;
+  } catch(e){ console.error("Mitgliederdaten konnten nicht geladen werden", e); }
+  data = memberData;
+  ensureDataShape();
+  impersonating = { userId: memberId, displayName: memberName };
+  currentStorageKey = null; // keine lokale Zwischenspeicherung für fremde Konten auf diesem Gerät
+  currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
+  editingExId = null; editingPlanId = null; extraRows = {};
+  dataLoading = false;
+  pushView("home");
+}
+
+function restoreAdminOwnData(){
+  if(!adminOwn) return;
+  data = adminOwn.data;
+  currentStorageKey = adminOwn.currentStorageKey;
+  currentSheetPlanId = adminOwn.currentSheetPlanId;
+  impersonating = null;
+  adminOwn = null;
 }
 
 /* ---------- Timer ---------- */
@@ -302,8 +410,10 @@ async function onLogin(){
   restoreOpenDay();
   saveLocalData();
   if(!remoteRow) await pushToCloud();
+  await ensureOwnProfile();
   lastSyncedAt = Date.now();
   dataLoading = false;
+  resetNavigationHistory();
   render();
 }
 
@@ -314,6 +424,9 @@ function onLogout(){
   editingExId = null; editingPlanId = null; extraRows = {};
   trainingState = { running:false, startedAt:null, frozen:0 };
   restState = { running:false, startedAt:null, frozen:0 };
+  profile = null; isAdmin = false; adminUnlocked = false; adminPinMsg = null;
+  adminMembers = []; adminSearchQuery = ""; impersonating = null; adminOwn = null;
+  resetNavigationHistory();
   render();
 }
 
@@ -322,6 +435,7 @@ function boot(){
   if(app) app.appendChild(renderLoadingScreen());
   initSupabase();
   if(!sb){ render(); return; }
+  window.addEventListener("popstate", onPopState);
   sb.auth.onAuthStateChange((_event, session)=>{
     const previousUserId = sbSession ? sbSession.user.id : null;
     sbSession = session;
@@ -332,6 +446,53 @@ function boot(){
       onLogout();
     }
   });
+}
+
+/* ---------- Navigation / Verlauf ---------- */
+// Damit die Zurück-Geste (v.a. auf Android/PWA) innerhalb der App navigiert statt sie zu
+// schließen, spiegeln wir Ansichtswechsel im Browser-Verlauf. Reine Tab-Wechsel (Home/Workouts/
+// Konto/Admin) legen bewusst KEINEN Eintrag an — nur echte "Reindrill"-Schritte (Workout starten,
+// Übungs-Chart öffnen, Admin öffnet ein Mitglied) tun das, damit "Zurück" dort wieder rauskommt.
+
+function resetNavigationHistory(){
+  hasPushedView = false;
+  try{ history.replaceState({ tyhView: view, impersonatingId: null }, "", "#" + view); } catch(e){}
+}
+
+function pushView(next){
+  view = next;
+  hasPushedView = true;
+  try{ history.pushState({ tyhView: next, impersonatingId: impersonating ? impersonating.userId : null }, "", "#" + next); } catch(e){}
+  render();
+}
+
+function goBack(fallbackView){
+  if(hasPushedView && history.state && history.state.tyhView){
+    history.back();
+  } else {
+    view = fallbackView;
+    try{ history.replaceState({ tyhView: fallbackView, impersonatingId: impersonating ? impersonating.userId : null }, "", "#" + fallbackView); } catch(e){}
+    render();
+  }
+}
+
+async function onPopState(event){
+  const state = event.state || {};
+  const prevView = view;
+  const nextView = state.tyhView || "home";
+  const nextImpersonatingId = state.impersonatingId || null;
+
+  if(prevView === "day" && nextView !== "day" && data){
+    stopTimer(trainingState); stopTimer(restState);
+    data.lastOpenDay = null;
+    await saveData();
+  }
+  if(impersonating && nextImpersonatingId !== impersonating.userId){
+    restoreAdminOwnData();
+  }
+  view = nextView;
+  editingExId = null; editingPlanId = null;
+  render();
 }
 
 /* ---------- Helpers ---------- */
@@ -423,6 +584,7 @@ function render(){
   else if(view === "exercise") app.appendChild(renderExercise());
   else if(view === "sheets") app.appendChild(renderSheets());
   else if(view === "account") app.appendChild(renderAccount());
+  else if(view === "admin") app.appendChild(adminUnlocked ? renderAdminPanel() : renderAdminPinGate());
   attachEvents();
 }
 
@@ -470,11 +632,19 @@ function renderSyncIndicatorOnly(){
 }
 
 function renderBottomNav(active){
+  if(impersonating){
+    return `<div class="bottom-nav impersonate-nav">
+      <div class="impersonate-tag">${icon('user')} Bearbeite: <b>${esc(impersonating.displayName)}</b></div>
+      <button class="nav-btn ${active==='account'?'active':''}" data-navview="account">${icon('settings')}<span>Verlauf</span></button>
+      <button class="nav-btn" id="admin-exit-impersonation">${icon('arrow-left')}<span>Verlassen</span></button>
+    </div>`;
+  }
   const synced = !!(sb && sbSession);
   return `<div class="bottom-nav">
     <button class="nav-btn ${active==='home'?'active':''}" data-navview="home">${icon('home')}<span>Home</span></button>
     <button class="nav-btn ${active==='sheets'?'active':''}" data-navview="sheets">${icon('grid')}<span>Workouts</span></button>
     <button class="nav-btn ${active==='account'?'active':''}" data-navview="account">${icon(synced?'cloud':'user')}<span>${synced?'Sync':'Konto'}</span></button>
+    ${isAdmin ? `<button class="nav-btn ${active==='admin'?'active':''}" data-navview="admin">${icon('settings')}<span>Admin</span></button>` : ``}
   </div>`;
 }
 
@@ -495,6 +665,65 @@ function renderPlanForm(plan){
       <button class="form-btn primary" data-action="save-plan-form" data-planid="${isNew ? '__new__' : plan.id}">Speichern</button>
     </div>
   </div>`);
+}
+
+/* ---------- Admin-Bereich ---------- */
+
+function renderAdminPinGate(){
+  const wrap = el(`<div>
+    <div class="back-row">
+      <button class="back-btn" data-navview="home">${icon('arrow-left')} Zurück</button>
+    </div>
+    <div class="day-title">
+      <div class="eyebrow">Admin</div>
+      <h2>Code eingeben</h2>
+    </div>
+    <div class="acct-card">
+      <div class="acct-sub">Dieser Code sperrt den Adminbereich nur vor versehentlichem Antippen. Deine eigentliche Berechtigung kommt aus deinem Konto.</div>
+      <div id="admin-pin-msg-slot"></div>
+      <input type="password" inputmode="numeric" id="admin-pin-input" placeholder="Code" class="authgate-input" style="text-align:center; letter-spacing:8px; font-size:20px;">
+      <button class="acct-btn primary" id="admin-pin-submit">${icon('lock')} Entsperren</button>
+    </div>
+    <div class="nav-spacer"></div>
+  </div>`);
+  if(adminPinMsg){
+    wrap.querySelector("#admin-pin-msg-slot").appendChild(el(`<div class="acct-msg error">${esc(adminPinMsg)}</div>`));
+  }
+  wrap.appendChild(el(renderBottomNav("admin")));
+  return wrap;
+}
+
+function renderAdminMemberListHtml(){
+  if(adminMembers.length === 0){
+    return `<div class="empty-state">${icon('user')}<br>${adminSearchQuery ? "Keine Mitglieder gefunden." : "Noch keine anderen Mitglieder registriert."}</div>`;
+  }
+  return adminMembers.map(m => `<div class="routine-card" data-adminopen="${esc(m.id)}" data-membername="${esc(m.display_name || m.id)}">
+    <div class="routine-glyph">${icon('user')}</div>
+    <div class="routine-info"><div class="routine-name">${esc(m.display_name || "(ohne Namen)")}</div></div>
+    <div class="routine-actions"><button class="start-btn">Öffnen</button></div>
+  </div>`).join("");
+}
+
+function wireAdminMemberList(){
+  document.querySelectorAll('#admin-member-list [data-adminopen]').forEach(card=>{
+    card.addEventListener("click", ()=> adminOpenMember(card.dataset.adminopen, card.dataset.membername));
+  });
+}
+
+function renderAdminPanel(){
+  const wrap = el(`<div>
+    <div class="day-title">
+      <div class="eyebrow">Admin</div>
+      <h2>Mitglieder</h2>
+    </div>
+    <div style="padding:0 16px 12px;">
+      <input type="text" id="admin-search-input" placeholder="Name suchen …" class="authgate-input" style="margin-bottom:0;" value="${esc(adminSearchQuery)}">
+    </div>
+    <div id="admin-member-list" class="routine-list">${renderAdminMemberListHtml()}</div>
+    <div class="nav-spacer"></div>
+  </div>`);
+  wrap.appendChild(el(renderBottomNav("admin")));
+  return wrap;
 }
 
 function renderHome(){
@@ -944,28 +1173,44 @@ function renderAccount(){
     </div>
     <div class="day-title">
       <div class="eyebrow">Konto</div>
-      <h2>Dein Bereich</h2>
+      <h2>${impersonating ? "Mitglied bearbeiten" : "Dein Bereich"}</h2>
     </div>
     <div id="account-body"></div>
   </div>`);
 
   const body = wrap.querySelector("#account-body");
 
+  if(impersonating){
+    body.appendChild(el(`<div class="acct-card">
+      <h3>${icon('user')} ${esc(impersonating.displayName)}</h3>
+      <div class="acct-sub">Du bearbeitest gerade als Admin die Trainingsdaten dieses Mitglieds. Änderungen werden direkt in dessen Konto gespeichert.</div>
+    </div>`));
+  } else {
+    body.appendChild(el(`<div class="acct-card">
+      <h3>Verbunden</h3>
+      <div class="acct-sub">Deine Trainingsdaten gehören nur dir und werden automatisch mit der Cloud synchronisiert — auf all deinen Geräten.</div>
+      <div class="acct-row">
+        ${icon('mail')}
+        <div class="acct-row-label">${esc(sbSession.user.email || "")}</div>
+        <span class="sync-badge on"><span class="dot"></span>${syncBusy ? "Sync…" : "Verbunden"}</span>
+      </div>
+      <label class="authgate-label" style="margin-top:10px;">Anzeigename (für Admin-Suche)</label>
+      <input type="text" id="acct-display-name" class="authgate-input" style="margin-bottom:8px;" value="${esc(profile ? (profile.display_name||"") : "")}" placeholder="Dein Name">
+      <button class="acct-btn ghost" id="acct-save-name">${icon('check')} Namen speichern</button>
+      <button class="acct-btn ghost" id="acct-sync-now">${icon('refresh')} Jetzt synchronisieren</button>
+      <button class="acct-btn danger" id="acct-signout">${icon('logout')} Abmelden</button>
+    </div>`));
+  }
+
   body.appendChild(el(`<div class="acct-card">
-    <h3>Verbunden</h3>
-    <div class="acct-sub">Deine Trainingsdaten gehören nur dir und werden automatisch mit der Cloud synchronisiert — auf all deinen Geräten.</div>
-    <div class="acct-row">
-      ${icon('mail')}
-      <div class="acct-row-label">${esc(sbSession.user.email || "")}</div>
-      <span class="sync-badge on"><span class="dot"></span>${syncBusy ? "Sync…" : "Verbunden"}</span>
-    </div>
-    <button class="acct-btn ghost" id="acct-sync-now">${icon('refresh')} Jetzt synchronisieren</button>
-    <button class="acct-btn danger" id="acct-signout">${icon('logout')} Abmelden</button>
+    <h3>Testdaten zurücksetzen</h3>
+    <div class="acct-sub">Löscht alle bisherigen Sätze &amp; Sessions (Statistiken, Verlauf, Workouts-Tabelle) — Trainingspläne und Übungen bleiben erhalten. Praktisch nach dem Ausprobieren.</div>
+    <button class="acct-btn danger" id="acct-reset-testdata">${icon('trash')} Trainingsverlauf löschen</button>
   </div>`));
 
   body.appendChild(el(`<div class="acct-card">
     <h3>Daten-Backup</h3>
-    <div class="acct-sub">Sichere deine Trainingsdaten als Datei oder importiere ein früheres Backup — unabhängig von der Cloud.</div>
+    <div class="acct-sub">Sichere die Trainingsdaten als Datei oder importiere ein früheres Backup — unabhängig von der Cloud.</div>
     <button class="acct-btn ghost" id="acct-export">${icon('download')} Backup exportieren</button>
     <button class="acct-btn ghost" id="acct-import">${icon('upload')} Backup importieren</button>
     <input type="file" id="acct-import-file" accept="application/json" style="display:none">
@@ -1025,14 +1270,13 @@ function attachEvents(){
   app.querySelectorAll(".routine-card").forEach(card => card.addEventListener("click", async (e)=>{
     if(e.target.closest('[data-action="edit-plan"]') || e.target.closest('[data-action="delete-plan"]')) return;
     currentPlanId = card.dataset.planid;
-    view = "day";
     editingExId = null;
     extraRows = {};
     startTimer(trainingState);
     restState = { running:false, startedAt:null, frozen:0 };
     data.lastOpenDay = currentPlanId;
     await saveData();
-    render();
+    pushView("day");
   }));
 
   app.querySelectorAll('[data-action="edit-plan"]').forEach(b=>{
@@ -1087,20 +1331,22 @@ function attachEvents(){
   if(exitBtn) exitBtn.addEventListener("click", async ()=>{
     stopTimer(trainingState); stopTimer(restState);
     data.lastOpenDay = null;
+    editingExId = null;
     await saveData();
-    view = "home"; editingExId = null; render();
+    goBack("home");
   });
   const finishBtn = app.querySelector("#finish-workout");
   if(finishBtn) finishBtn.addEventListener("click", async ()=>{
     stopTimer(trainingState); stopTimer(restState);
     data.lastFinishedAt = Date.now();
     data.lastOpenDay = null;
+    editingExId = null;
     await saveData();
-    view = "home"; editingExId = null; render();
+    goBack("home");
   });
 
   const backDay = app.querySelector("#back-day");
-  if(backDay) backDay.addEventListener("click", ()=>{ view = "day"; render(); });
+  if(backDay) backDay.addEventListener("click", ()=> goBack("day"));
   const backHomeAccount = app.querySelector("#back-home-account");
   if(backHomeAccount) backHomeAccount.addEventListener("click", ()=>{ view = "home"; render(); });
 
@@ -1140,7 +1386,7 @@ function attachEvents(){
   });
 
   app.querySelectorAll('[data-action="chart"]').forEach(b=>{
-    b.addEventListener("click", ()=>{ currentExId = b.dataset.exid; view = "exercise"; render(); });
+    b.addEventListener("click", ()=>{ currentExId = b.dataset.exid; pushView("exercise"); });
   });
 
   app.querySelectorAll('[data-action="check-set"]').forEach(b=>{
@@ -1272,6 +1518,21 @@ function attachEvents(){
   if(acctSyncNow) acctSyncNow.addEventListener("click", ()=> pullFromCloudAndMerge());
   const acctSignout = app.querySelector("#acct-signout");
   if(acctSignout) acctSignout.addEventListener("click", ()=> signOut());
+  const acctSaveName = app.querySelector("#acct-save-name");
+  if(acctSaveName) acctSaveName.addEventListener("click", async ()=>{
+    const val = app.querySelector("#acct-display-name").value;
+    await saveOwnDisplayName(val);
+    render();
+  });
+  const acctResetTestdata = app.querySelector("#acct-reset-testdata");
+  if(acctResetTestdata) acctResetTestdata.addEventListener("click", async ()=>{
+    const who = impersonating ? `von "${impersonating.displayName}"` : "";
+    if(!confirm(`Den gesamten Trainingsverlauf ${who} wirklich löschen? Alle bisherigen Sätze und Sessions gehen unwiderruflich verloren. Trainingspläne und Übungen bleiben erhalten.`)) return;
+    data.logs = {};
+    data.lastFinishedAt = 0;
+    await saveData();
+    render();
+  });
 
   const acctExport = app.querySelector("#acct-export");
   if(acctExport) acctExport.addEventListener("click", exportBackup);
@@ -1283,6 +1544,28 @@ function attachEvents(){
       if(acctImportFile.files && acctImportFile.files[0]) importBackup(acctImportFile.files[0]);
     });
   }
+
+  /* Admin-Events */
+  const adminPinSubmit = app.querySelector("#admin-pin-submit");
+  if(adminPinSubmit) adminPinSubmit.addEventListener("click", ()=>{
+    adminUnlockWithPin(app.querySelector("#admin-pin-input").value.trim());
+  });
+  const adminPinInput = app.querySelector("#admin-pin-input");
+  if(adminPinInput) adminPinInput.addEventListener("keydown", (e)=>{
+    if(e.key === "Enter") adminUnlockWithPin(adminPinInput.value.trim());
+  });
+  const adminSearchInput = app.querySelector("#admin-search-input");
+  if(adminSearchInput) adminSearchInput.addEventListener("input", ()=> scheduleAdminSearch(adminSearchInput.value));
+  wireAdminMemberList();
+  const adminExitBtn = app.querySelector("#admin-exit-impersonation");
+  if(adminExitBtn) adminExitBtn.addEventListener("click", ()=>{
+    // Deterministischer Ausstieg unabhängig davon, wie tief man beim Mitglied reingedrillt hat
+    // (nicht per history.back(), das würde nur eine einzelne Verlauf-Ebene zurückgehen).
+    restoreAdminOwnData();
+    view = "admin";
+    resetNavigationHistory();
+    render();
+  });
 }
 
 boot();
