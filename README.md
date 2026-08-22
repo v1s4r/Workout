@@ -1,18 +1,18 @@
 # Track Your Health
 
-Dein persönliches Trainings-Logbuch für Push/Pull-Splits & Co. — Pläne, Sätze, Gewichte und Fortschritt, direkt im Browser, offline-fähig, optional mit deiner eigenen Supabase-Cloud synchronisiert zwischen PC und Handy.
+Dein persönliches Trainings-Logbuch für Push/Pull-Splits & Co. — Pläne, Sätze, Gewichte und Fortschritt, direkt im Browser, mit eigenem Login pro Person und automatischer Cloud-Synchronisierung zwischen PC und Handy.
 
 Keine Installation, kein Build-Prozess, keine Abhängigkeiten außer dem Browser — nur statische Dateien.
 
 ## Features
 
+- **Eigenes Konto pro Person**: Login-Bildschirm vor der App — jede*r bekommt einen privaten Trainingsbereich, niemand sieht die Daten anderer (Supabase Row Level Security)
 - **Trainingspläne** anlegen, umbenennen, löschen (z. B. Push A/B, Pull A/B)
 - **Workout-Modus**: Sätze mit Gewicht & Wiederholungen eintragen, Vergleich zum letzten Mal direkt daneben, Trainings- & Pausen-Timer
 - **Fortschritt**: Verlaufs-Chart pro Übung inkl. PR-Erkennung
-- **Workoutz**: kompakte Tabellenansicht aller Sessions zum schnellen Nachschauen/Bearbeiten
+- **Workouts**: kompakte Tabellenansicht aller Sessions zum schnellen Nachschauen/Bearbeiten
 - **Statistiken**: Sessions diese Woche, Tage-Streak, Gesamtzahl Einheiten
-- **Offline-first**: alles läuft über `localStorage`, funktioniert ohne Internet
-- **Cloud-Sync (optional)**: eigenes Supabase-Projekt verbinden → Daten stehen auf allen Geräten zur Verfügung
+- **Cloud-Sync**: automatisch bei jeder Änderung, sobald man angemeldet ist — gleicher Stand auf allen Geräten
 - **Backup**: Trainingsdaten jederzeit als JSON-Datei exportieren/importieren
 - **PWA**: auf dem Handy "Zum Home-Bildschirm hinzufügen" → startet wie eine native App
 
@@ -32,11 +32,15 @@ Da alles statische Dateien sind (`index.html`, `style.css`, `app.js`, …), funk
 
 Die App merkt sich danach ihr eigenes Icon, startet ohne Browser-Leiste und funktioniert auch offline (Service Worker cached die App-Shell).
 
-## Cloud-Sync mit Supabase einrichten
+## Cloud-Sync mit Supabase (bereits eingerichtet)
 
-Die App funktioniert komplett ohne Supabase (nur lokal, pro Gerät). Für Sync zwischen mehreren Geräten:
+Die App ist fest mit einem Supabase-Projekt verbunden — die Projekt-URL und der öffentliche „Publishable/Anon"-Key stehen als Konstanten am Anfang von `app.js` (`SUPABASE_URL`, `SUPABASE_ANON_KEY`). Das ist bewusst so: dieser Key ist für den Browser gedacht und öffentlich sichtbar (genau wie bei jeder anderen Supabase-App) — den eigentlichen Zugriffsschutz übernimmt Row Level Security (siehe unten). Niemand außer dir sieht oder verändert diese Verbindung; Besucher*innen der App bekommen nur den Anmelde-Bildschirm zu sehen.
 
-### 1. Tabelle & Sicherheitsregeln anlegen
+Wer die App öffnet, muss sich zuerst registrieren oder anmelden (E-Mail + Passwort) — erst danach betritt man den eigenen, privaten Trainingsbereich. Jedes Konto sieht ausschließlich seine eigenen Daten.
+
+Falls du irgendwann ein anderes Supabase-Projekt verwenden willst: `SUPABASE_URL`/`SUPABASE_ANON_KEY` in `app.js` austauschen und neu deployen.
+
+### 1. Tabelle & Sicherheitsregeln anlegen (einmalig, schon erledigt)
 
 Im Supabase-Dashboard → **SQL Editor** → folgendes Skript einmalig ausführen:
 
@@ -64,25 +68,19 @@ create policy "Nutzer aktualisieren nur ihre eigenen Daten"
 
 Das stellt sicher, dass jede*r Nutzer*in ausschließlich die eigene Zeile lesen und schreiben kann — selbst mit dem öffentlichen Anon-Key im Browser.
 
-### 2. E-Mail-Bestätigung (optional)
+### 2. E-Mail-Bestätigung
 
-Standardmäßig verlangt Supabase eine Bestätigungs-Mail bei der Registrierung. Für den schnellen Eigengebrauch kannst du das unter **Authentication → Providers → Email → "Confirm email"** deaktivieren. Für den produktiven Einsatz empfiehlt sich, es aktiviert zu lassen.
-
-### 3. Zugangsdaten in der App eintragen
-
-Im Supabase-Dashboard unter **Project Settings → API**:
-- **Project URL** (z. B. `https://xxxxxxxx.supabase.co`)
-- **anon / public key** (kein Geheimnis — dieser Key ist für den Browser gedacht, der eigentliche Schutz läuft über die Row-Level-Security-Regeln von oben)
-
-Beide Werte in der App unter **Konto → Supabase-Projekt verbinden** eintragen und speichern. Danach registrieren oder anmelden — die App synchronisiert automatisch bei jeder Änderung.
-
-Die Zugangsdaten werden nur lokal im Browser (`localStorage`) gespeichert, nicht im Code/Repo.
+Standardmäßig verlangt Supabase eine Bestätigungs-Mail bei der Registrierung, bevor man sich anmelden kann. Das lässt sich unter **Authentication → Providers → Email → „Confirm email"** ein-/ausschalten. Für eine App, die mehrere Personen nutzen, ist „aktiviert" die sicherere Wahl (verhindert, dass sich jemand mit einer fremden E-Mail-Adresse anmeldet).
 
 ### Sync-Verhalten
 
-- Jede Änderung wird lokal sofort gespeichert und (wenn verbunden) mit kurzer Verzögerung in die Cloud gepusht.
-- Beim Anmelden auf einem neuen Gerät wird geprüft, ob der Cloud-Stand neuer ist als der lokale — bei Unterschieden fragt die App nach, welcher Stand übernommen werden soll.
-- Das ist "Last-Write-Wins"-Sync (kein Zusammenführen einzelner Sätze) — für den Einsatz an einem Gerät gleichzeitig völlig ausreichend. Bei echter Parallelnutzung an zwei Geräten zur exakt gleichen Zeit gewinnt der zuletzt gespeicherte Stand.
+- Beim Anmelden wird zuerst der Cloud-Stand des eigenen Kontos geladen (falls vorhanden). Gibt es noch keinen, wird — nur beim allerersten Login auf einem Gerät — ein eventuell schon vorhandener lokaler Trainingsstand übernommen; sonst startet man mit einem leeren Trainingsbereich.
+- Jede Änderung wird danach automatisch (mit kurzer Verzögerung) in die Cloud gespeichert.
+- Das ist "Last-Write-Wins"-Sync (kein Zusammenführen einzelner Sätze) — für die Nutzung an einem Gerät nach dem anderen völlig ausreichend. Werden auf zwei Geräten gleichzeitig Änderungen gemacht, gewinnt der zuletzt gespeicherte Stand.
+
+### Wer darf was sehen?
+
+Die Row-Level-Security-Regeln aus Schritt 1 sorgen dafür, dass jedes Konto ausschließlich seine eigene Zeile in `training_data` lesen und schreiben kann — auch technisch versierte Nutzer*innen kommen über den öffentlichen Anon-Key nicht an fremde Trainingsdaten. Es gibt aktuell keine Admin-Ansicht, über die du als Betreiber*in fremde Konten einsehen könntest (das müsste bei Bedarf gesondert gebaut werden).
 
 ## Projektstruktur
 

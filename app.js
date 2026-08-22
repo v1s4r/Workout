@@ -5,64 +5,17 @@
    Lokale Speicherung (localStorage) + optionale Supabase-Cloud-Sync
    ========================================================= */
 
-const STORAGE_KEY = "tyh-training-data-v1";
+const STORAGE_PREFIX = "tyh-training-data-v1-";
 const LEGACY_STORAGE_KEY = "ac-training-data-v2";
 const LOCAL_UPDATED_KEY = "tyh-local-updated-at";
-const SB_URL_KEY = "tyh-sb-url";
-const SB_ANON_KEY = "tyh-sb-anon";
-const SEED_DATE = "2026-08-11";
+
+// Fest hinterlegt: der Anon/Publishable-Key ist bewusst öffentlich und für den Browser gedacht.
+// Der eigentliche Zugriffsschutz läuft über Supabase Row Level Security (siehe README) —
+// jede*r Nutzer*in kommt ausschließlich an die eigenen, per Login geschützten Trainingsdaten.
+const SUPABASE_URL = "https://iobplzfqlnzlxsgenxzm.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_S9F3fCBJcX8V4NCqgKgDPw_TG037xYk";
 
 function uid(){ return 'ex_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
-
-/* ---------- Default-Daten (nur beim allerersten Start) ---------- */
-
-function mkEx(list, seedLogs, name, group, sets){
-  const ex = { id: uid(), name, group };
-  list.push(ex);
-  const baseAt = new Date(SEED_DATE + "T12:00:00").getTime();
-  seedLogs[ex.id] = [{ date: SEED_DATE, sets: sets.map(([w,r], i) => ({weight:w, reps:r, at: baseAt + i})) }];
-  return ex;
-}
-
-function buildDefaultData(){
-  const pushA = { id: uid(), name: "Push A", exercises: [] };
-  const pushB = { id: uid(), name: "Push B", exercises: [] };
-  const pullA = { id: uid(), name: "Pull A", exercises: [] };
-  const pullB = { id: uid(), name: "Pull B", exercises: [] };
-  const logs = {};
-
-  mkEx(pushA.exercises, logs, "Bankdrücken mit LH", "Brust", [[60,8],[60,7],[60,6]]);
-  mkEx(pushA.exercises, logs, "Schrägbank-Brustpresse", "Brust", [[40,12],[40,10],[40,9]]);
-  mkEx(pushA.exercises, logs, "Beinpresse", "Beine", [[120,12],[120,11],[120,10]]);
-  mkEx(pushA.exercises, logs, "Schulterdrücken mit KH", "Schultern", [[18,10],[18,9],[18,8]]);
-  mkEx(pushA.exercises, logs, "Seitenheben mit KH", "Schultern", [[10,15],[10,14],[10,12]]);
-  mkEx(pushA.exercises, logs, "Trizepsdrücken am Kabelzug", "Trizeps", [[25,13],[25,12],[25,11]]);
-
-  mkEx(pushB.exercises, logs, "Schulterdrücken mit LH", "Schultern", [[40,8],[40,7],[40,6]]);
-  mkEx(pushB.exercises, logs, "Schrägbankdrücken mit KH", "Brust", [[24,12],[24,10],[24,9]]);
-  mkEx(pushB.exercises, logs, "Hackenschmidt / Beinpresse", "Beine", [[100,14],[100,12],[100,11]]);
-  mkEx(pushB.exercises, logs, "Beinstrecker", "Beine", [[45,15],[45,13],[45,12]]);
-  mkEx(pushB.exercises, logs, "Seitenheben mit KH", "Schultern", [[10,18],[10,15],[10,13]]);
-  mkEx(pushB.exercises, logs, "Dips / Trizeps über Kopf", "Trizeps", [[25,12],[25,10],[25,8]]);
-
-  mkEx(pullA.exercises, logs, "Klimmzug / Latzug", "Rücken", [[55,12],[55,10],[55,9]]);
-  mkEx(pullA.exercises, logs, "Rudern am Kabelzug", "Rücken", [[50,12],[50,10],[50,10]]);
-  mkEx(pullA.exercises, logs, "Rumänisches Kreuzheben", "Beine", [[70,10],[70,9],[70,8]]);
-  mkEx(pullA.exercises, logs, "Face Pulls / Reverse Fly", "Schultern", [[20,18],[20,16],[20,15]]);
-  mkEx(pullA.exercises, logs, "Bizeps-Curl mit KH", "Bizeps", [[14,12],[14,11],[14,10]]);
-  mkEx(pullA.exercises, logs, "Beinbeuger", "Beine", [[40,13],[40,12],[40,11]]);
-
-  mkEx(pullB.exercises, logs, "Rudern schwer (LH / T-Bar)", "Rücken", [[70,9],[70,8],[70,6]]);
-  mkEx(pullB.exercises, logs, "Latzug eng / neutral", "Rücken", [[55,12],[55,11],[55,10]]);
-  mkEx(pullB.exercises, logs, "Hip Thrust", "Beine", [[80,12],[80,10],[80,9]]);
-  mkEx(pullB.exercises, logs, "Beinbeuger", "Beine", [[40,15],[40,13],[40,12]]);
-  mkEx(pullB.exercises, logs, "Reverse Fly / Face Pull", "Schultern", [[20,18],[20,16],[20,15]]);
-  mkEx(pullB.exercises, logs, "Hammer-Curl mit KH", "Bizeps", [[14,13],[14,12],[14,10]]);
-
-  const plans = [pushA, pullA, pushB, pullB];
-  const seedFinishedAt = new Date(SEED_DATE + "T23:59:59").getTime();
-  return { plans, logs, lastFinishedAt: seedFinishedAt, lastOpenDay: null };
-}
 
 /* ---------- App-State ---------- */
 
@@ -87,31 +40,14 @@ let authMode = "signin";  // signin | signup
 let authMsg = null;       // {type:'error'|'ok', text}
 let lastSyncedAt = null;
 let pushTimer = null;
-
-function getSupabaseConfig(){
-  return { url: localStorage.getItem(SB_URL_KEY) || "", anon: localStorage.getItem(SB_ANON_KEY) || "" };
-}
-function saveSupabaseConfig(url, anon){
-  localStorage.setItem(SB_URL_KEY, url.trim());
-  localStorage.setItem(SB_ANON_KEY, anon.trim());
-}
-function clearSupabaseConfig(){
-  localStorage.removeItem(SB_URL_KEY);
-  localStorage.removeItem(SB_ANON_KEY);
-}
+let currentStorageKey = null; // STORAGE_PREFIX + user id, set once logged in
+let dataLoading = false;      // true only while onLogin() fetches the initial cloud state
 
 function initSupabase(){
-  const { url, anon } = getSupabaseConfig();
-  if(!url || !anon || typeof window.supabase === "undefined"){ sb = null; return; }
+  if(typeof window.supabase === "undefined"){ sb = null; return; }
   try{
-    sb = window.supabase.createClient(url, anon, { auth: { persistSession: true, autoRefreshToken: true } });
+    sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { auth: { persistSession: true, autoRefreshToken: true } });
   } catch(e){ console.error("Supabase-Init fehlgeschlagen", e); sb = null; }
-}
-
-async function refreshSession(){
-  if(!sb) return;
-  const { data: sess } = await sb.auth.getSession();
-  sbSession = sess && sess.session ? sess.session : null;
 }
 
 function scheduleCloudPush(){
@@ -181,30 +117,26 @@ async function pullFromCloudAndMerge(){
 
 async function signUp(email, password){
   authMsg = null;
-  if(!sb){ authMsg = { type:"error", text:"Bitte zuerst Supabase-URL und Anon-Key speichern." }; render(); return; }
+  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; render(); return; }
   const { data: res, error } = await sb.auth.signUp({ email, password });
   if(error){ authMsg = { type:"error", text: error.message }; render(); return; }
-  if(res.session){
-    sbSession = res.session;
-    await pullFromCloudAndMerge();
-  } else {
+  if(!res.session){
+    // E-Mail-Bestätigung ist aktiv: onAuthStateChange feuert erst nach der Bestätigung + Anmeldung.
     authMsg = { type:"ok", text:"Konto erstellt. Bitte bestätige deine E-Mail-Adresse und melde dich danach an." };
+    render();
   }
-  render();
+  // Bei sofortiger Session übernimmt onAuthStateChange (-> onLogin) den Rest.
 }
 async function signIn(email, password){
   authMsg = null;
-  if(!sb){ authMsg = { type:"error", text:"Bitte zuerst Supabase-URL und Anon-Key speichern." }; render(); return; }
-  const { data: res, error } = await sb.auth.signInWithPassword({ email, password });
+  if(!sb){ authMsg = { type:"error", text:"Keine Verbindung zur Cloud. Bitte Seite neu laden." }; render(); return; }
+  const { error } = await sb.auth.signInWithPassword({ email, password });
   if(error){ authMsg = { type:"error", text: error.message }; render(); return; }
-  sbSession = res.session;
-  await pullFromCloudAndMerge();
-  render();
+  // onAuthStateChange (-> onLogin) übernimmt das Laden der Trainingsdaten.
 }
 async function signOut(){
   if(sb) await sb.auth.signOut();
-  sbSession = null;
-  render();
+  // onAuthStateChange (-> onLogout) räumt den lokalen State auf.
 }
 
 /* ---------- Timer ---------- */
@@ -265,11 +197,19 @@ function fmtDate(iso){
   return d + "." + m + "." + y.slice(2);
 }
 
-/* ---------- Lokale Speicherung ---------- */
+/* ---------- Lokale Speicherung (pro Konto) ---------- */
 
-function loadLocalData(){
+function emptyData(){
+  return { plans: [], logs: {}, lastFinishedAt: 0, lastOpenDay: null };
+}
+
+// Vor dem Login-Zwang lief die App lokal-only unter diesem Namen (bzw. noch früher unter
+// LEGACY_STORAGE_KEY). Beim allerersten Login auf einem Gerät übernehmen wir diesen Stand
+// automatisch ins neue Konto, statt ihn verwaisen zu lassen.
+const PRE_LOGIN_STORAGE_KEY = "tyh-training-data-v1";
+function loadPreLoginAnonymousData(){
   try{
-    const raw = localStorage.getItem(STORAGE_KEY);
+    const raw = localStorage.getItem(PRE_LOGIN_STORAGE_KEY);
     if(raw) return JSON.parse(raw);
   } catch(e){}
   try{
@@ -278,15 +218,31 @@ function loadLocalData(){
   } catch(e){}
   return null;
 }
-function saveLocalData(){
+
+function loadScopedLocalData(key){
   try{
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    const raw = localStorage.getItem(key);
+    if(raw) return JSON.parse(raw);
+  } catch(e){}
+  return null;
+}
+function saveLocalData(){
+  if(!currentStorageKey) return;
+  try{
+    localStorage.setItem(currentStorageKey, JSON.stringify(data));
     localStorage.setItem(LOCAL_UPDATED_KEY, String(Date.now()));
   } catch(e){ console.error("Lokales Speichern fehlgeschlagen", e); }
 }
 async function saveData(){
   saveLocalData();
   scheduleCloudPush();
+}
+
+function ensureDataShape(){
+  if(!Array.isArray(data.plans)) data.plans = [];
+  if(!data.logs || typeof data.logs !== "object") data.logs = {};
+  if(typeof data.lastFinishedAt !== "number") data.lastFinishedAt = 0;
+  if(data.lastOpenDay === undefined) data.lastOpenDay = null;
 }
 
 function migratePlansIfNeeded(){
@@ -313,26 +269,69 @@ function restoreOpenDay(){
   startTimer(trainingState);
 }
 
-async function loadData(){
-  data = loadLocalData();
-  if(!data){ data = buildDefaultData(); saveLocalData(); }
-  const migrated = migratePlansIfNeeded();
-  if(typeof data.lastFinishedAt !== "number") data.lastFinishedAt = 0;
-  if(data.lastOpenDay === undefined) data.lastOpenDay = null;
+/* ---------- Login-Zustand: Betreten/Verlassen des eigenen Trainingsbereichs ---------- */
+
+async function onLogin(){
+  dataLoading = true; render();
+
+  const scopedKey = STORAGE_PREFIX + sbSession.user.id;
+  currentStorageKey = scopedKey;
+
+  let remoteRow = null;
+  try{
+    const { data: row, error } = await sb.from("training_data").select("data, updated_at").eq("user_id", sbSession.user.id).maybeSingle();
+    if(!error) remoteRow = row;
+  } catch(e){ console.error("Cloud-Abruf fehlgeschlagen", e); }
+
+  if(remoteRow && remoteRow.data){
+    data = remoteRow.data;
+  } else {
+    const scopedLocal = loadScopedLocalData(scopedKey);
+    if(scopedLocal){
+      data = scopedLocal;
+    } else {
+      const anon = loadPreLoginAnonymousData();
+      data = (anon && Array.isArray(anon.plans) && anon.plans.length > 0) ? anon : emptyData();
+    }
+  }
+  migratePlansIfNeeded();
+  ensureDataShape();
+  view = "home";
+  editingExId = null; editingPlanId = null; extraRows = {};
   currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
   restoreOpenDay();
-  if(migrated) saveLocalData();
-
-  initSupabase();
-  if(sb){
-    await refreshSession();
-    sb.auth.onAuthStateChange((_event, session)=>{
-      sbSession = session;
-      render();
-    });
-    if(sbSession) await pullFromCloudAndMerge();
-  }
+  saveLocalData();
+  if(!remoteRow) await pushToCloud();
+  lastSyncedAt = Date.now();
+  dataLoading = false;
   render();
+}
+
+function onLogout(){
+  data = null;
+  currentStorageKey = null;
+  view = "home";
+  editingExId = null; editingPlanId = null; extraRows = {};
+  trainingState = { running:false, startedAt:null, frozen:0 };
+  restState = { running:false, startedAt:null, frozen:0 };
+  render();
+}
+
+function boot(){
+  const app = document.getElementById("app");
+  if(app) app.appendChild(renderLoadingScreen());
+  initSupabase();
+  if(!sb){ render(); return; }
+  sb.auth.onAuthStateChange((_event, session)=>{
+    const previousUserId = sbSession ? sbSession.user.id : null;
+    sbSession = session;
+    if(session){
+      if(session.user.id !== previousUserId) onLogin();
+      else render();
+    } else {
+      onLogout();
+    }
+  });
 }
 
 /* ---------- Helpers ---------- */
@@ -416,12 +415,53 @@ function computeStats(){
 function render(){
   const app = document.getElementById("app");
   app.innerHTML = "";
+  if(!sb){ app.appendChild(renderConnectionError()); return; }
+  if(!sbSession){ app.appendChild(renderAuthGate()); attachEvents(); return; }
+  if(!data || dataLoading){ app.appendChild(renderLoadingScreen()); return; }
   if(view === "home") app.appendChild(renderHome());
   else if(view === "day") app.appendChild(renderDay());
   else if(view === "exercise") app.appendChild(renderExercise());
   else if(view === "sheets") app.appendChild(renderSheets());
   else if(view === "account") app.appendChild(renderAccount());
   attachEvents();
+}
+
+function renderConnectionError(){
+  return el(`<div class="connection-error">
+    ${icon('cloud-off')}
+    <h2 class="display" style="font-size:20px; color:var(--text); margin-top:4px;">Keine Verbindung</h2>
+    <div>Die Cloud-Verbindung konnte nicht aufgebaut werden.<br>Prüfe deine Internetverbindung und lade die Seite neu.</div>
+  </div>`);
+}
+function renderLoadingScreen(){
+  return el(`<div class="connection-error">${icon('refresh')}<div>Trainingsdaten werden geladen …</div></div>`);
+}
+
+function renderAuthGate(){
+  const wrap = el(`<div class="authgate">
+    <div class="authgate-brand">
+      <img class="logo-badge" src="icons/icon-192.png" alt="Track Your Health Logo">
+      <div class="b1">TRACK YOUR HEALTH</div>
+      <div class="b2">Training Log</div>
+    </div>
+    <div class="acct-card authgate-card">
+      <div class="acct-tabs">
+        <button class="acct-tab ${authMode==='signin'?'active':''}" data-authmode="signin">Anmelden</button>
+        <button class="acct-tab ${authMode==='signup'?'active':''}" data-authmode="signup">Konto erstellen</button>
+      </div>
+      <div class="acct-sub" style="margin-top:2px;">${authMode==='signin' ? 'Melde dich an, um deinen persönlichen Trainingsbereich zu öffnen.' : 'Leg dein eigenes Konto an — privat und automatisch synchronisiert auf all deinen Geräten.'}</div>
+      <div id="auth-msg-slot"></div>
+      <label class="authgate-label">Benutzername (E-Mail)</label>
+      <input type="email" id="auth-email" placeholder="du@beispiel.de" class="authgate-input" autocomplete="email">
+      <label class="authgate-label">Passwort</label>
+      <input type="password" id="auth-password" placeholder="mind. 6 Zeichen" class="authgate-input" autocomplete="${authMode==='signin'?'current-password':'new-password'}">
+      <button class="acct-btn primary" id="auth-submit">${icon(authMode==='signin'?'lock':'mail')} ${authMode==='signin' ? "Anmelden" : "Konto erstellen"}</button>
+    </div>
+  </div>`);
+  if(authMsg){
+    wrap.querySelector("#auth-msg-slot").appendChild(el(`<div class="acct-msg ${authMsg.type==='error'?'error':'ok'}">${esc(authMsg.text)}</div>`));
+  }
+  return wrap;
 }
 
 function renderSyncIndicatorOnly(){
@@ -433,7 +473,7 @@ function renderBottomNav(active){
   const synced = !!(sb && sbSession);
   return `<div class="bottom-nav">
     <button class="nav-btn ${active==='home'?'active':''}" data-navview="home">${icon('home')}<span>Home</span></button>
-    <button class="nav-btn ${active==='sheets'?'active':''}" data-navview="sheets">${icon('grid')}<span>Workoutz</span></button>
+    <button class="nav-btn ${active==='sheets'?'active':''}" data-navview="sheets">${icon('grid')}<span>Workouts</span></button>
     <button class="nav-btn ${active==='account'?'active':''}" data-navview="account">${icon(synced?'cloud':'user')}<span>${synced?'Sync':'Konto'}</span></button>
   </div>`;
 }
@@ -488,7 +528,7 @@ function renderHome(){
       </div>
     </div>
     <div class="routine-list" id="routine-list"></div>
-    <button class="workoutz-btn" id="open-sheets">${icon('grid')} Workoutz — Tabellenansicht</button>
+    <button class="workoutz-btn" id="open-sheets">${icon('grid')} Workouts — Tabellenansicht</button>
   </div>`);
 
   const listEl = wrap.querySelector("#routine-list");
@@ -714,7 +754,7 @@ function buildSheetTableHtml(exercises, dates, maxSetsByDate){
     <tr>
       <td class="lbl-col3">
         <span class="sheet-rowtype">Wdh</span>
-        <button class="sheet-del-btn" data-action="sheet-hide-ex" data-exid="${ex.id}" title="Nur aus Workoutz entfernen">${icon('trash')}</button>
+        <button class="sheet-del-btn" data-action="sheet-hide-ex" data-exid="${ex.id}" title="Nur aus Workouts entfernen">${icon('trash')}</button>
       </td>
       ${buildRowCells(ex, dates, maxSetsByDate, "reps")}
     </tr>`;
@@ -734,7 +774,7 @@ function renderSheets(){
       <button class="topbar-action" data-navview="account" title="Konto &amp; Sync">${icon((sb && sbSession)?'cloud':'user')}</button>
     </div>
     <div class="day-title">
-      <div class="eyebrow">Workoutz</div>
+      <div class="eyebrow">Workouts</div>
       <h2>${plan ? esc(plan.name) : "—"}</h2>
     </div>
     <div id="sheet-container"></div>
@@ -898,70 +938,30 @@ function renderChart(sessions){
 /* ---------- Account / Sync View ---------- */
 
 function renderAccount(){
-  const { url, anon } = getSupabaseConfig();
-  const configured = !!(url && anon);
-  const loggedIn = !!(sb && sbSession);
-
   const wrap = el(`<div>
     <div class="back-row">
       <button class="back-btn" id="back-home-account">${icon('arrow-left')} Zurück</button>
     </div>
     <div class="day-title">
       <div class="eyebrow">Konto</div>
-      <h2>Cloud-Sync</h2>
+      <h2>Dein Bereich</h2>
     </div>
     <div id="account-body"></div>
   </div>`);
 
   const body = wrap.querySelector("#account-body");
 
-  if(loggedIn){
-    body.appendChild(el(`<div class="acct-card">
-      <h3>Verbunden</h3>
-      <div class="acct-sub">Deine Trainingsdaten werden automatisch mit Supabase synchronisiert — auf all deinen Geräten.</div>
-      <div class="acct-row">
-        ${icon('mail')}
-        <div class="acct-row-label">${esc(sbSession.user.email || "")}</div>
-        <span class="sync-badge on"><span class="dot"></span>${syncBusy ? "Sync…" : "Verbunden"}</span>
-      </div>
-      <button class="acct-btn ghost" id="acct-sync-now">${icon('refresh')} Jetzt synchronisieren</button>
-      <button class="acct-btn danger" id="acct-signout">${icon('logout')} Abmelden</button>
-    </div>`));
-  } else {
-    body.appendChild(el(`<div class="acct-card">
-      <h3>Supabase-Projekt verbinden</h3>
-      <div class="acct-sub">Trag hier die Zugangsdaten deines Supabase-Projekts ein (Projekteinstellungen → API). Der Anon-Key ist bewusst öffentlich und für den Browser gedacht — Zugriffsschutz übernimmt Row Level Security (siehe README).</div>
-      <label style="font-size:10px; text-transform:uppercase; color:var(--text-dim); letter-spacing:0.5px; display:block; margin-bottom:6px; font-weight:700;">Projekt-URL</label>
-      <input type="text" id="sb-url-input" placeholder="https://xxxxxxxx.supabase.co" value="${esc(url)}"
-        style="width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:11px 12px; font-size:13.5px; margin-bottom:12px;">
-      <label style="font-size:10px; text-transform:uppercase; color:var(--text-dim); letter-spacing:0.5px; display:block; margin-bottom:6px; font-weight:700;">Anon (public) Key</label>
-      <input type="text" id="sb-anon-input" placeholder="eyJhbGciOi..." value="${esc(anon)}"
-        style="width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:11px 12px; font-size:13.5px; margin-bottom:14px;">
-      <button class="acct-btn primary" id="sb-save-config">${icon('check')} Speichern &amp; verbinden</button>
-      ${configured ? `<button class="acct-btn ghost" id="sb-clear-config">Verbindung entfernen</button>` : ``}
-    </div>`));
-
-    if(configured){
-      const authCard = el(`<div class="acct-card" id="auth-card">
-        <div class="acct-tabs">
-          <button class="acct-tab ${authMode==='signin'?'active':''}" data-authmode="signin">Anmelden</button>
-          <button class="acct-tab ${authMode==='signup'?'active':''}" data-authmode="signup">Registrieren</button>
-        </div>
-        <div id="auth-msg-slot"></div>
-        <label style="font-size:10px; text-transform:uppercase; color:var(--text-dim); letter-spacing:0.5px; display:block; margin-bottom:6px; font-weight:700;">E-Mail</label>
-        <input type="email" id="auth-email" placeholder="du@beispiel.de"
-          style="width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:11px 12px; font-size:13.5px; margin-bottom:12px;">
-        <label style="font-size:10px; text-transform:uppercase; color:var(--text-dim); letter-spacing:0.5px; display:block; margin-bottom:6px; font-weight:700;">Passwort</label>
-        <input type="password" id="auth-password" placeholder="mind. 6 Zeichen"
-          style="width:100%; background:var(--panel2); border:1px solid var(--border); color:var(--text); border-radius:9px; padding:11px 12px; font-size:13.5px; margin-bottom:14px;">
-        <button class="acct-btn primary" id="auth-submit">${icon(authMode==='signin'?'lock':'mail')} ${authMode==='signin' ? "Anmelden" : "Konto erstellen"}</button>
-      </div>`);
-      if(authMsg){
-        authCard.querySelector("#auth-msg-slot").appendChild(el(`<div class="acct-msg ${authMsg.type==='error'?'error':'ok'}">${esc(authMsg.text)}</div>`));
-      }
-      body.appendChild(authCard);
-    }
-  }
+  body.appendChild(el(`<div class="acct-card">
+    <h3>Verbunden</h3>
+    <div class="acct-sub">Deine Trainingsdaten gehören nur dir und werden automatisch mit der Cloud synchronisiert — auf all deinen Geräten.</div>
+    <div class="acct-row">
+      ${icon('mail')}
+      <div class="acct-row-label">${esc(sbSession.user.email || "")}</div>
+      <span class="sync-badge on"><span class="dot"></span>${syncBusy ? "Sync…" : "Verbunden"}</span>
+    </div>
+    <button class="acct-btn ghost" id="acct-sync-now">${icon('refresh')} Jetzt synchronisieren</button>
+    <button class="acct-btn danger" id="acct-signout">${icon('logout')} Abmelden</button>
+  </div>`));
 
   body.appendChild(el(`<div class="acct-card">
     <h3>Daten-Backup</h3>
@@ -971,7 +971,7 @@ function renderAccount(){
     <input type="file" id="acct-import-file" accept="application/json" style="display:none">
   </div>`));
 
-  body.appendChild(el(`<div class="acct-foot">Track Your Health · lokal &amp; privat, optional mit deiner eigenen Supabase-Cloud synchronisiert.</div>`));
+  body.appendChild(el(`<div class="acct-foot">Track Your Health · dein Konto, deine Daten — privat und automatisch synchronisiert.</div>`));
 
   wrap.appendChild(el(`<div class="nav-spacer"></div>`));
   wrap.appendChild(el(renderBottomNav("account")));
@@ -1046,6 +1046,7 @@ function attachEvents(){
       if(!confirm(`Trainingsplan "${plan.name}" komplett löschen, inkl. aller Übungen und ihres Verlaufs? Das kann nicht rückgängig gemacht werden.`)) return;
       plan.exercises.forEach(ex => delete data.logs[ex.id]);
       data.plans = data.plans.filter(p => p.id !== plan.id);
+      if(currentSheetPlanId === plan.id) currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
       await saveData();
       render();
     });
@@ -1062,7 +1063,9 @@ function attachEvents(){
       const name = app.querySelector("#plan-form-name").value.trim();
       if(!name) return;
       if(b.dataset.planid === "__new__"){
-        data.plans.push({ id: uid(), name, exercises: [] });
+        const newPlan = { id: uid(), name, exercises: [] };
+        data.plans.push(newPlan);
+        if(!currentSheetPlanId) currentSheetPlanId = newPlan.id;
       } else {
         const plan = findPlan(b.dataset.planid);
         if(plan) plan.name = name;
@@ -1130,7 +1133,7 @@ function attachEvents(){
 
   app.querySelectorAll('[data-action="delete"]').forEach(b=>{
     b.addEventListener("click", async ()=>{
-      if(!confirm("Diese Übung aus dem Trainingsplan nehmen? Sie taucht danach nicht mehr im Workout auf, bleibt aber in \"Workoutz\" weiterhin sichtbar.")) return;
+      if(!confirm("Diese Übung aus dem Trainingsplan nehmen? Sie taucht danach nicht mehr im Workout auf, bleibt aber in \"Workouts\" weiterhin sichtbar.")) return;
       const ex = findExercise(b.dataset.exid);
       if(ex){ ex.removed = true; await saveData(); render(); }
     });
@@ -1234,7 +1237,7 @@ function attachEvents(){
   });
   app.querySelectorAll('[data-action="sheet-hide-ex"]').forEach(b=>{
     b.addEventListener("click", async ()=>{
-      if(!confirm("Diese Zeile nur aus Workoutz entfernen? Die Übung bleibt in deinem Trainingsplan und ihr Fortschritt bleibt erhalten — sie verschwindet nur aus dieser Tabelle.")) return;
+      if(!confirm("Diese Zeile nur aus Workouts entfernen? Die Übung bleibt in deinem Trainingsplan und ihr Fortschritt bleibt erhalten — sie verschwindet nur aus dieser Tabelle.")) return;
       const ex = findExercise(b.dataset.exid);
       if(ex){ ex.hiddenFromSheet = true; await saveData(); render(); }
     });
@@ -1253,25 +1256,7 @@ function attachEvents(){
     });
   });
 
-  /* Account view events */
-  const sbSaveBtn = app.querySelector("#sb-save-config");
-  if(sbSaveBtn) sbSaveBtn.addEventListener("click", ()=>{
-    const u = app.querySelector("#sb-url-input").value.trim();
-    const k = app.querySelector("#sb-anon-input").value.trim();
-    if(!u || !k) return;
-    saveSupabaseConfig(u, k);
-    initSupabase();
-    authMsg = null;
-    render();
-  });
-  const sbClearBtn = app.querySelector("#sb-clear-config");
-  if(sbClearBtn) sbClearBtn.addEventListener("click", async ()=>{
-    if(!confirm("Cloud-Verbindung entfernen? Deine lokalen Daten bleiben erhalten.")) return;
-    if(sb) await sb.auth.signOut().catch(()=>{});
-    clearSupabaseConfig();
-    sb = null; sbSession = null;
-    render();
-  });
+  /* Auth-gate + Account view events */
   app.querySelectorAll('[data-authmode]').forEach(b=>{
     b.addEventListener("click", ()=>{ authMode = b.dataset.authmode; authMsg = null; render(); });
   });
@@ -1300,7 +1285,7 @@ function attachEvents(){
   }
 }
 
-loadData();
+boot();
 
 if("serviceWorker" in navigator){
   window.addEventListener("load", ()=>{
