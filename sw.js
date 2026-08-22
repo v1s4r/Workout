@@ -1,4 +1,4 @@
-const CACHE_NAME = "tyh-cache-v1";
+const CACHE_NAME = "tyh-cache-v2";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -33,18 +33,18 @@ self.addEventListener("fetch", (event) => {
   // Never intercept cross-origin calls (Supabase API, Google Fonts, jsDelivr) — always go to network.
   if (url.origin !== self.location.origin) return;
 
+  // Network-first: always try to fetch the latest version so updates show up
+  // immediately. The cache only kicks in as a fallback when there's no
+  // connection at all — that's the one job an offline cache should have.
   event.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req)
-        .then((res) => {
-          if (res && res.ok) {
-            const clone = res.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
-          }
-          return res;
-        })
-        .catch(() => cached);
-      return cached || network;
-    })
+    fetch(req)
+      .then((res) => {
+        if (res && res.ok) {
+          const clone = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, clone));
+        }
+        return res;
+      })
+      .catch(() => caches.match(req))
   );
 });
