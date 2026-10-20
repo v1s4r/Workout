@@ -22,7 +22,7 @@ const ADMIN_PIN = "0816";
 
 function uid(){ return 'ex_' + Date.now().toString(36) + Math.random().toString(36).slice(2,7); }
 
-/* ---------- Standard-Trainingsprogramm (3 Phasen × Push/Pull A+B) ---------- */
+/* ---------- Standard-Trainingsprogramm (Push/Pull A+B) ---------- */
 
 const PROGRAM_DAYS = {
   pushA: [
@@ -67,58 +67,22 @@ const PROGRAM_DAYS = {
 const DAY_ORDER = ["pushA", "pullA", "pushB", "pullB"];
 const DAY_LABELS = { pushA: "Push A", pullA: "Pull A", pushB: "Push B", pullB: "Pull B" };
 
-const PROGRAM_PHASES = [
-  {
-    id: "kraftausdauer", name: "Kraftausdauer", sub: "Wochen 1–8",
-    reps: {
-      pushA: [[3,"15–20"],[3,"15–20"],[2,"15–25"],[3,"15–20"],[2,"15–25"],[3,"15–25"],[2,"15–25"]],
-      pullA: [[3,"15–20"],[3,"15–20"],[2,"15–25"],[3,"15–25"],[2,"15–20"],[2,"15–20"],[1,"15–25"],[2,"15–25"]],
-      pushB: [[3,"15–20"],[3,"15–20"],[2,"15–25"],[3,"15–20"],[2,"15–25"],[3,"15–25"],[2,"15–25"]],
-      pullB: [[3,"15–20"],[3,"15–20"],[2,"15–25"],[3,"15–25"],[2,"15–20"],[2,"15–20"],[1,"15–25"],[2,"15–25"]],
-    }
-  },
-  {
-    id: "hypertrophie", name: "Hypertrophie", sub: "Wochen 9–16",
-    reps: {
-      pushA: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
-      pullA: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"8–12"],[2,"8–12"],[1,"10–15"],[2,"10–15"]],
-      pushB: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
-      pullB: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"8–12"],[2,"8–12"],[1,"10–15"],[2,"10–15"]],
-    }
-  },
-  {
-    id: "maximalkraft", name: "Maximalkraft", sub: "Wochen 17–24",
-    reps: {
-      pushA: [[3,"3–5"],[3,"6–10"],[2,"10–15"],[3,"6–10"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
-      pullA: [[3,"3–5"],[3,"6–10"],[2,"10–15"],[3,"10–15"],[2,"6–10"],[2,"6–10"],[1,"10–15"],[2,"10–15"]],
-      pushB: [[3,"3–5"],[3,"6–10"],[2,"10–15"],[3,"6–10"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
-      pullB: [[3,"3–5"],[3,"6–10"],[2,"10–15"],[3,"10–15"],[2,"6–10"],[2,"6–10"],[1,"10–15"],[2,"10–15"]],
-    }
-  },
-];
+const PROGRAM_REPS = {
+  pushA: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
+  pullA: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"8–12"],[2,"8–12"],[1,"10–15"],[2,"10–15"]],
+  pushB: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"10–15"]],
+  pullB: [[3,"8–12"],[3,"8–12"],[2,"10–15"],[3,"10–15"],[2,"8–12"],[2,"8–12"],[1,"10–15"],[2,"10–15"]],
+};
 
 function buildProgramData(){
-  const plans = [];
-  PROGRAM_PHASES.forEach(phase=>{
-    DAY_ORDER.forEach(dayKey=>{
-      const exercises = PROGRAM_DAYS[dayKey].map(([name, group], i)=>{
-        const [sets, reps] = phase.reps[dayKey][i];
-        return { id: uid(), name, group, targetSets: sets, targetReps: reps };
-      });
-      plans.push({ id: uid(), name: DAY_LABELS[dayKey], phase: phase.id, exercises });
+  const plans = DAY_ORDER.map(dayKey=>{
+    const exercises = PROGRAM_DAYS[dayKey].map(([name, group], i)=>{
+      const [sets, reps] = PROGRAM_REPS[dayKey][i];
+      return { id: uid(), name, group, targetSets: sets, targetReps: reps };
     });
+    return { id: uid(), name: DAY_LABELS[dayKey], exercises };
   });
   return { plans, logs: {}, lastFinishedAt: 0, lastOpenDay: null };
-}
-
-function planPhaseId(plan){ return plan.phase || "allgemein"; }
-
-function pickInitialPhaseId(){
-  const withPlans = PROGRAM_PHASES.find(ph => data.plans.some(p => planPhaseId(p) === ph.id));
-  if(withPlans) return withPlans.id;
-  const anyPhase = data.plans.find(p => p.phase);
-  if(anyPhase) return anyPhase.phase;
-  return data.plans.length ? "allgemein" : PROGRAM_PHASES[0].id;
 }
 
 /* ---------- App-State ---------- */
@@ -128,7 +92,6 @@ let view = "home";        // home | day | exercise | sheets | account | admin
 let currentPlanId = null;
 let currentExId = null;
 let currentSheetPlanId = null;
-let currentPhaseId = PROGRAM_PHASES[0].id;
 let editingExId = null;
 let editingPlanId = null;
 let extraRows = {};
@@ -333,7 +296,7 @@ function scheduleAdminSearch(query){
 
 async function adminOpenMember(memberId, memberName){
   dataLoading = true; render();
-  adminOwn = { data, currentStorageKey, currentSheetPlanId, currentPhaseId };
+  adminOwn = { data, currentStorageKey, currentSheetPlanId };
   let memberData = buildProgramData();
   try{
     const { data: row } = await sb.from("training_data").select("data").eq("user_id", memberId).maybeSingle();
@@ -343,8 +306,7 @@ async function adminOpenMember(memberId, memberName){
   ensureDataShape();
   impersonating = { userId: memberId, displayName: memberName };
   currentStorageKey = null; // keine lokale Zwischenspeicherung für fremde Konten auf diesem Gerät
-  currentPhaseId = pickInitialPhaseId();
-  currentSheetPlanId = data.plans.find(p => planPhaseId(p) === currentPhaseId)?.id || (data.plans[0] ? data.plans[0].id : null);
+  currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
   editingExId = null; editingPlanId = null; extraRows = {};
   dataLoading = false;
   pushView("home");
@@ -355,7 +317,6 @@ function restoreAdminOwnData(){
   data = adminOwn.data;
   currentStorageKey = adminOwn.currentStorageKey;
   currentSheetPlanId = adminOwn.currentSheetPlanId;
-  currentPhaseId = adminOwn.currentPhaseId;
   impersonating = null;
   adminOwn = null;
 }
@@ -515,8 +476,7 @@ async function onLogin(){
   ensureDataShape();
   view = "home";
   editingExId = null; editingPlanId = null; extraRows = {};
-  currentPhaseId = pickInitialPhaseId();
-  currentSheetPlanId = data.plans.find(p => planPhaseId(p) === currentPhaseId)?.id || (data.plans[0] ? data.plans[0].id : null);
+  currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
   restoreOpenDay();
   saveLocalData();
   if(!remoteRow) await pushToCloud();
@@ -842,11 +802,6 @@ function renderAdminPanel(){
   return wrap;
 }
 
-function renderPhaseTabsHtml(){
-  const tabs = PROGRAM_PHASES.map(ph => `<button class="phase-tab ${currentPhaseId===ph.id?'active':''}" data-phaseid="${ph.id}">${esc(ph.name)}</button>`).join("");
-  return `<div class="phase-tabs">${tabs}</div>`;
-}
-
 function renderHome(){
   const stats = computeStats();
   const synced = !!(sb && sbSession);
@@ -877,19 +832,17 @@ function renderHome(){
         <div class="stat-label">Einheiten</div>
       </div>
     </div>
-    ${renderPhaseTabsHtml()}
     <div class="routine-list" id="routine-list"></div>
     <button class="workoutz-btn" id="open-sheets">${icon('grid')} Workouts — Tabellenansicht</button>
   </div>`);
 
   const listEl = wrap.querySelector("#routine-list");
-  const phasePlans = data.plans.filter(p => planPhaseId(p) === currentPhaseId);
 
-  if(phasePlans.length === 0 && editingPlanId !== "__new__"){
-    listEl.appendChild(el(`<div class="empty-state">${icon('dumbbell')}<br>Noch keine Trainingspläne in dieser Phase.<br>Leg unten einen an.</div>`));
+  if(data.plans.length === 0 && editingPlanId !== "__new__"){
+    listEl.appendChild(el(`<div class="empty-state">${icon('dumbbell')}<br>Noch keine Trainingspläne.<br>Leg unten einen an.</div>`));
   }
 
-  phasePlans.forEach(plan=>{
+  data.plans.forEach(plan=>{
     if(editingPlanId === plan.id){
       listEl.appendChild(renderPlanForm(plan));
       return;
@@ -1127,13 +1080,12 @@ function renderSheets(){
       <div class="eyebrow">Workouts</div>
       <h2>${plan ? esc(plan.name) : "—"}</h2>
     </div>
-    ${renderPhaseTabsHtml()}
     <div id="sheet-container"></div>
   </div>`);
 
   const container = wrap.querySelector("#sheet-container");
   if(!plan){
-    container.appendChild(el(`<div class="sheet-empty">Noch keine Trainingspläne in dieser Phase vorhanden.</div>`));
+    container.appendChild(el(`<div class="sheet-empty">Noch keine Trainingspläne vorhanden.</div>`));
   } else {
     const { exercises, dates, maxSetsByDate } = buildSheetData(currentSheetPlanId);
     if(exercises.length === 0){
@@ -1143,8 +1095,7 @@ function renderSheets(){
     }
   }
 
-  const phasePlans = data.plans.filter(p => planPhaseId(p) === currentPhaseId);
-  const tabs = phasePlans.map(p=>`<button class="sheet-tab ${p.id===currentSheetPlanId?'active':''}" data-sheetplanid="${p.id}">${esc(p.name)}</button>`).join("");
+  const tabs = data.plans.map(p=>`<button class="sheet-tab ${p.id===currentSheetPlanId?'active':''}" data-sheetplanid="${p.id}">${esc(p.name)}</button>`).join("");
   wrap.appendChild(el(`<div class="sheet-tabs">${tabs}</div>`));
   return wrap;
 }
@@ -1333,7 +1284,7 @@ function renderAccount(){
 
   body.appendChild(el(`<div class="acct-card">
     <h3>Trainingsplan neu aufsetzen</h3>
-    <div class="acct-sub">Ersetzt sämtliche Trainingspläne &amp; den Verlauf durch das Standardprogramm (3 Phasen: Kraftausdauer, Hypertrophie, Maximalkraft mit Push/Pull A+B). Eigene Pläne und bisherige Sätze gehen dabei verloren.</div>
+    <div class="acct-sub">Ersetzt sämtliche Trainingspläne &amp; den Verlauf durch das Standardprogramm (Push/Pull A+B). Eigene Pläne und bisherige Sätze gehen dabei verloren.</div>
     <button class="acct-btn danger" id="acct-reset-program">${icon('refresh')} Standardprogramm laden</button>
   </div>`));
 
@@ -1419,7 +1370,7 @@ function attachEvents(){
       if(!confirm(`Trainingsplan "${plan.name}" komplett löschen, inkl. aller Übungen und ihres Verlaufs? Das kann nicht rückgängig gemacht werden.`)) return;
       plan.exercises.forEach(ex => delete data.logs[ex.id]);
       data.plans = data.plans.filter(p => p.id !== plan.id);
-      if(currentSheetPlanId === plan.id) currentSheetPlanId = data.plans.find(p => planPhaseId(p) === currentPhaseId)?.id || null;
+      if(currentSheetPlanId === plan.id) currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
       await saveData();
       render();
     });
@@ -1436,7 +1387,7 @@ function attachEvents(){
       const name = app.querySelector("#plan-form-name").value.trim();
       if(!name) return;
       if(b.dataset.planid === "__new__"){
-        const newPlan = { id: uid(), name, phase: currentPhaseId, exercises: [] };
+        const newPlan = { id: uid(), name, exercises: [] };
         data.plans.push(newPlan);
         if(!currentSheetPlanId) currentSheetPlanId = newPlan.id;
       } else {
@@ -1454,14 +1405,6 @@ function attachEvents(){
 
   app.querySelectorAll(".sheet-tab").forEach(t=>{
     t.addEventListener("click", ()=>{ currentSheetPlanId = t.dataset.sheetplanid; render(); });
-  });
-
-  app.querySelectorAll(".phase-tab").forEach(t=>{
-    t.addEventListener("click", ()=>{
-      currentPhaseId = t.dataset.phaseid;
-      currentSheetPlanId = data.plans.find(p => planPhaseId(p) === currentPhaseId)?.id || null;
-      render();
-    });
   });
 
   const exitBtn = app.querySelector("#exit-workout");
@@ -1701,8 +1644,7 @@ function attachEvents(){
     if(!confirm(`Wirklich ALLE Trainingspläne ${who} löschen und durch das Standardprogramm ersetzen? Eigene Pläne, Übungen und der gesamte Verlauf gehen unwiderruflich verloren.`)) return;
     data = buildProgramData();
     editingExId = null; editingPlanId = null; extraRows = {};
-    currentPhaseId = pickInitialPhaseId();
-    currentSheetPlanId = data.plans.find(p => planPhaseId(p) === currentPhaseId)?.id || null;
+    currentSheetPlanId = data.plans[0] ? data.plans[0].id : null;
     view = "home";
     await saveData();
     render();
