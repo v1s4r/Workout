@@ -1,4 +1,4 @@
-const CACHE_NAME = "tyh-cache-v2";
+const CACHE_NAME = "tyh-cache-v3";
 const APP_SHELL = [
   "./",
   "./index.html",
@@ -34,10 +34,13 @@ self.addEventListener("fetch", (event) => {
   if (url.origin !== self.location.origin) return;
 
   // Network-first: always try to fetch the latest version so updates show up
-  // immediately. The cache only kicks in as a fallback when there's no
-  // connection at all — that's the one job an offline cache should have.
+  // immediately. "no-store" bypasses the browser's own HTTP cache too — GitHub
+  // Pages serves assets with a several-minute max-age, so a plain fetch() can
+  // silently hand back a stale file even though this handler "went to network".
+  // The cache only kicks in as a fallback when there's no connection at all —
+  // that's the one job an offline cache should have.
   event.respondWith(
-    fetch(req)
+    fetch(req, { cache: "no-store" })
       .then((res) => {
         if (res && res.ok) {
           const clone = res.clone();
