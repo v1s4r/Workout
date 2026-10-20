@@ -90,19 +90,32 @@ create policy "Jede*r legt das eigene Profil an"
 create policy "Jede*r bearbeitet das eigene Profil"
   on public.profiles for update using (auth.uid() = id);
 
+-- Eine Policy auf "profiles", die zur Prüfung wieder "profiles" abfragt, würde eine
+-- Endlosschleife auslösen (Postgres-Fehler "infinite recursion detected in policy").
+-- Diese Funktion umgeht das: sie läuft mit erhöhten Rechten (security definer) und wird
+-- dadurch selbst nicht von den Policies unten erneut ausgebremst.
+create or replace function public.is_admin()
+returns boolean
+language sql
+security definer
+set search_path = public
+as $$
+  select coalesce((select is_admin from public.profiles where id = auth.uid()), false);
+$$;
+
 create policy "Admin sieht alle Profile"
   on public.profiles for select
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.is_admin());
 
 create policy "Admin sieht alle Trainingsdaten"
   on public.training_data for select
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.is_admin());
 create policy "Admin bearbeitet alle Trainingsdaten"
   on public.training_data for update
-  using (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  using (public.is_admin());
 create policy "Admin legt Trainingsdaten für Mitglieder an"
   on public.training_data for insert
-  with check (exists (select 1 from public.profiles p where p.id = auth.uid() and p.is_admin));
+  with check (public.is_admin());
 ```
 
 Danach dich selbst zum Admin machen — einmal in der App registrieren/anmelden (damit dein Profil existiert), dann im SQL Editor mit deiner eigenen E-Mail-Adresse:

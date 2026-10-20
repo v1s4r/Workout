@@ -108,6 +108,13 @@ input{font-family:inherit;}
 .stat-card .stat-label{font-size:10.5px; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.8px; margin-top:3px; font-weight:700;}
 .stat-card.accent .stat-val{color:var(--orange-soft);}
 
+.phase-tabs{display:flex; gap:8px; padding:2px 20px 16px; overflow-x:auto; -webkit-overflow-scrolling:touch;}
+.phase-tab{
+  flex:0 0 auto; padding:9px 16px; border-radius:20px; border:1px solid var(--border);
+  background:var(--panel2); color:var(--text-dim); font-size:12px; font-weight:700; white-space:nowrap;
+}
+.phase-tab.active{background:var(--grad-brand-diag); color:#04101f; border-color:transparent;}
+
 .section-label{padding:4px 20px 10px; font-size:11px; text-transform:uppercase; letter-spacing:1.5px; color:var(--text-dim); font-weight:700;}
 
 /* ---------- routine list ---------- */
@@ -218,7 +225,10 @@ input{font-family:inherit;}
   border-radius:8px; padding:8px 2px; font-size:13.5px; text-align:center; font-family:'Inter'; font-weight:600;
 }
 .set-input:focus{outline:none; border-color:var(--blue);}
-.set-static{font-size:13.5px; font-weight:700; text-align:center; color:var(--blue-soft);}
+.set-row.done .set-input{
+  background:rgba(61,155,255,0.08); border-color:var(--blue-dim); color:var(--blue-soft); font-weight:700;
+}
+.set-row.done .set-input:focus{border-color:var(--blue); background:var(--panel2); color:var(--text);}
 .set-check{
   width:30px; height:30px; border-radius:50%; border:1.5px solid var(--border); background:var(--panel2);
   display:flex; align-items:center; justify-content:center; color:transparent;
